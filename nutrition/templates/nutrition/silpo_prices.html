@@ -1,0 +1,41 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}Ціни «Сільпо»{% endblock %}
+
+{% block content %}
+<section class="result plan-page">
+    <a class="back-link" href="{{ back_url }}">← До раціону</a>
+    <h1 class="plan-title">Ціни «Сільпо»</h1>
+    <p class="plan-meta num">Для твого магазину, днів у раціоні: {{ days_count }}. Вибрано найдешевший товар за кілограм чи штуку. Кошик не змінюється, а ціни не зберігаються.</p>
+
+    <ul class="silpo-rows">
+        {% for row in prices.rows %}
+        <li class="silpo-row">
+            <div class="silpo-need">
+                <div class="card-name">{{ row.product.name }}</div>
+                <div class="plan-meta num">потрібно {% if row.pieces %}{{ row.pieces }} шт{% else %}{{ row.grams|floatformat:0 }} г{% endif %}</div>
+            </div>
+            {% if row.offer %}
+            <div class="silpo-offer">
+                <a href="{{ row.offer.url }}" target="_blank" rel="noopener">{{ row.offer.name }}</a>
+                <div class="plan-meta num">{{ row.offer.price_label }} · купити {{ row.offer.quantity }}</div>
+            </div>
+            <div class="card-cost-val num">{{ row.offer.cost|floatformat:2 }} грн</div>
+            {% else %}
+            <div class="silpo-offer plan-meta">Не знайдено в цьому магазині</div>
+            {% endif %}
+        </li>
+        {% empty %}
+        <li class="silpo-row plan-meta">Список покупок порожній.</li>
+        {% endfor %}
+    </ul>
+
+    <div class="total">
+        <div>
+            <div class="total-label">Купити цілими упаковками</div>
+            <p class="silpo-text num">На сам раціон піде товарів приблизно на {{ prices.used_total|floatformat:2 }} грн, решта лишиться вдома. Доставка окремо{% if prices.min_order %}, мінімальне замовлення {{ prices.min_order|floatformat:0 }} грн{% endif %}.{% if prices.missing %} Не знайдено позицій: {{ prices.missing }}, у суму вони не входять.{% endif %}</p>
+        </div>
+        <div class="total-value num">{{ prices.basket_total|floatformat:2 }} грн</div>
+    </div>
+</section>
+{% endblock %}

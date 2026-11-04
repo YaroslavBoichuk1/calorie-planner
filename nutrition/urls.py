@@ -6,4 +6,8 @@ urlpatterns = [
     path('plans/', views.plan_list_view, name='plan_list'),
     path('plans/save/', views.plan_save_view, name='plan_save'),
     path('plans/<int:pk>/', views.plan_detail_view, name='plan_detail'),
+    path('silpo/login/', views.silpo_login_view, name='silpo_login'),
+    path('silpo/callback/', views.silpo_callback_view, name='silpo_callback'),
+    path('silpo/logout/', views.silpo_logout_view, name='silpo_logout'),
+    path('silpo/prices/', views.silpo_prices_view, name='silpo_prices'),
 ]

@@ -1,10 +1,13 @@
 import math
 
+from django.contrib import messages
 from django.http import Http404, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
+from . import silpo
 from .models import MealPlan, Recipe
 from .plans import load_plan_days, save_plan
 from .planner import (
@@ -149,6 +152,7 @@ def planner_view(request):
         'min_calories': MIN_DAY_CALORIES,
         'max_calories': MAX_DAY_CALORIES,
         'query': request.GET.urlencode(),
+        'silpo_connected': silpo.is_connected(request.session),
     }
 
     try:
@@ -191,3 +195,61 @@ def plan_detail_view(request, pk):
     context = result_context(load_plan_days(plan), plan.period, plan.protein_pct, plan.fat_pct, plan.carbs_pct)
     context['plan'] = plan
     return render(request, 'nutrition/plan_detail.html', context)
+
+
+def safe_next_url(request):
+    """Адреса повернення з форми: лише всередині нашого сайту, інакше — головна сторінка."""
+    next_url = request.POST.get('next', '')
+    if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return next_url
+    return reverse('planner')
+
+
+@require_POST
+def silpo_login_view(request):
+    """Починає вхід: перекидає людину на сторінку входу «Сільпо»."""
+    redirect_uri = request.build_absolute_uri(reverse('silpo_callback'))
+    try:
+        return redirect(silpo.start_login(request.session, redirect_uri, safe_next_url(request)))
+    except silpo.SilpoError as error:
+        messages.error(request, str(error))
+        return redirect('planner')
+
+
+def silpo_callback_view(request):
+    """Сюди «Сільпо» повертає людину після входу: завершує вхід і повертає її на сторінку, звідки вона прийшла."""
+    try:
+        next_url = silpo.finish_login(request.session, request.GET)
+    except silpo.SilpoError as error:
+        messages.error(request, str(error))
+        return redirect('planner')
+    messages.success(request, 'Акаунт «Сільпо» підключено.')
+    return redirect(next_url)
+
+
+def silpo_prices_view(request):
+    """Сторінка реальних цін «Сільпо» для списку покупок раціону. Лише читає дані: кошик не змінює, ціни не зберігає."""
+    back_url = f"{reverse('planner')}?{request.GET.urlencode()}"
+    if not silpo.is_connected(request.session):
+        return redirect(back_url)
+
+    try:
+        plan_days = build_plan_days(read_choices(request.GET))
+        prices = silpo.find_prices(silpo.McpConnection(request.session), shopping_list(plan_days))
+    except (ValueError, silpo.SilpoError) as error:
+        messages.error(request, str(error))
+        return redirect(back_url)
+
+    return render(request, 'nutrition/silpo_prices.html', {
+        'prices': prices,
+        'days_count': len(plan_days),
+        'back_url': back_url,
+    })
+
+
+@require_POST
+def silpo_logout_view(request):
+    """Виходить з акаунта «Сільпо» в цьому браузері."""
+    silpo.logout(request.session)
+    messages.success(request, 'Акаунт «Сільпо» відключено.')
+    return redirect(safe_next_url(request))

@@ -21,6 +21,10 @@
         </nav>
     </header>
 
+    {% for message in messages %}
+    <div class="message message-{{ message.tags }}" role="status">{{ message }}</div>
+    {% endfor %}
+
     {% block content %}{% endblock %}
 </div>
 </body>

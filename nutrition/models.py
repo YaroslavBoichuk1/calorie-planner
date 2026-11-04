@@ -17,6 +17,7 @@ class Product(models.Model):
     fats = models.DecimalField(max_digits=6, decimal_places=1)
     carbs = models.DecimalField(max_digits=6, decimal_places=1)
     grams_per_piece = models.FloatField(null=True, blank=True)
+    silpo_search = models.CharField('Пошук у «Сільпо»', max_length=100, blank=True)   # якщо порожньо — шукаємо за назвою
 
     def __str__(self):
         """Назва продукту — так він показується в адмінці й списках."""
@@ -111,6 +112,16 @@ class PlanItem(models.Model):
     def __str__(self):
         """Короткий опис рядка — для адмінки."""
         return f'{self.day_name}, {self.meal_name}: {self.product}'
+
+
+class SilpoClient(models.Model):
+    """Реєстрація застосунку на сервері входу «Сільпо»: один запис на адресу повернення."""
+    redirect_uri = models.URLField(unique=True)
+    client_id = models.CharField(max_length=255)
+
+    def __str__(self):
+        """Адреса повернення — так запис показується в адмінці."""
+        return self.redirect_uri
 
 
 class Recipe(models.Model):

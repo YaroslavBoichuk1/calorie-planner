@@ -68,6 +68,7 @@
             </div>
             {% else %}
             {% include 'nutrition/_result.html' %}
+            {% include 'nutrition/_silpo.html' %}
 
             <!-- Зберегти раціон -->
             <form method="post" action="{% url 'plan_save' %}" class="save-plan">
