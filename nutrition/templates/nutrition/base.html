@@ -1,0 +1,27 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Calorie Planner{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'nutrition/style.css' %}">
+</head>
+<body>
+<div class="page">
+
+    <header class="topbar">
+        <div class="logo-mark">Р</div>
+        <div class="logo-text">Раціон</div>
+        <nav class="topnav">
+            <a href="{% url 'planner' %}">Планувальник</a>
+            <a href="{% url 'plan_list' %}">Збережені раціони</a>
+        </nav>
+    </header>
+
+    {% block content %}{% endblock %}
+</div>
+</body>
+</html>

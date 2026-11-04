@@ -1,0 +1,82 @@
+{% extends 'nutrition/base.html' %}
+
+{% block content %}
+    <div class="layout">
+
+        <!-- ЛІВА КОЛОНКА: параметри -->
+        <form method="get" class="form">
+            <div class="field">
+    <div class="field-label">Період</div>
+    <div class="period-switch">
+        <label>
+            <input type="radio" name="period" value="day" {% if period == 'day' %}checked{% endif %}>
+            <span>День</span>
+        </label>
+        <label>
+            <input type="radio" name="period" value="week" {% if period == 'week' %}checked{% endif %}>
+            <span>Тиждень</span>
+        </label>
+        <label>
+            <input type="radio" name="period" value="custom" {% if period == 'custom' %}checked{% endif %}>
+            <span>Свій</span>
+        </label>
+    </div>
+</div>
+            <div class="field days-field">
+                <label class="field-label" for="days">Кількість днів (1–{{ max_days }})</label>
+                <input class="kcal num" id="days" type="number" name="days" value="{{ days_count }}">
+            </div>
+
+            <div class="field">
+                <label class="field-label" for="calories">Калорії на день ({{ min_calories }}–{{ max_calories }})</label>
+                <input class="kcal num" id="calories" type="number" name="calories" min="{{ min_calories }}" max="{{ max_calories }}" value="{{ target_calories }}">
+            </div>
+
+            <fieldset class="field">
+                <legend class="field-label">Пропорція БЖВ</legend>
+                <div class="ratio-bar">
+                    <span style="width: {{ protein_pct }}%; background: var(--protein)"></span>
+                    <span style="width: {{ fat_pct }}%; background: var(--fat)"></span>
+                    <span style="width: {{ carbs_pct }}%; background: var(--carbs)"></span>
+                </div>
+                <div class="pct-grid">
+                    <label class="pct">
+                        <span class="pct-name"><span class="dot" style="background: var(--protein)"></span>Білок</span>
+                        <span class="pct-box"><input class="num" type="number" name="protein_pct" min="0" max="100" value="{{ protein_pct }}"><span class="pct-sign">%</span></span>
+                    </label>
+                    <label class="pct">
+                        <span class="pct-name"><span class="dot" style="background: var(--fat)"></span>Жир</span>
+                        <span class="pct-box"><input class="num" type="number" name="fat_pct" min="0" max="100" value="{{ fat_pct }}"><span class="pct-sign">%</span></span>
+                    </label>
+                    <label class="pct">
+                        <span class="pct-name"><span class="dot" style="background: var(--carbs)"></span>Вуглеводи</span>
+                        <span class="pct-box"><input class="num" type="number" name="carbs_pct" min="0" max="100" value="{{ carbs_pct }}"><span class="pct-sign">%</span></span>
+                    </label>
+                </div>
+            </fieldset>
+
+            <button type="submit" class="btn">Порахувати раціон</button>
+        </form>
+
+        <!-- ПРАВА КОЛОНКА: результат -->
+        <section class="result">
+              {% if error %}
+            <!-- Повідомлення про помилку -->
+            <div class="error">
+                <div class="error-title">Не вдалося скласти раціон</div>
+                <div class="error-text">{{ error }}</div>
+            </div>
+            {% else %}
+            {% include 'nutrition/_result.html' %}
+
+            <!-- Зберегти раціон -->
+            <form method="post" action="{% url 'plan_save' %}" class="save-plan">
+                {% csrf_token %}
+                <input type="hidden" name="query" value="{{ query }}">
+                <input class="save-plan-name" type="text" name="name" maxlength="100" placeholder="Назва раціону (необов'язково)" aria-label="Назва раціону">
+                <button type="submit" class="btn save-plan-btn">Зберегти раціон</button>
+            </form>
+            {% endif %}
+        </section>
+    </div>
+{% endblock %}

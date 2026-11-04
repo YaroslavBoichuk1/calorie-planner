@@ -1,0 +1,218 @@
+/* === Палітра (CSS-змінні) === */
+:root {
+    --bg: #F4F1EA;
+    --ink: #16231C;
+    --muted: #4A5750;
+    --green: #1F6B46;
+    --green-dark: #134A30;
+    --card: #FFFFFF;
+    --line: #E4DED0;
+    --soft: #EEE9DD;
+    --field: #F4F1EA;
+
+    /* кольори макронутрієнтів */
+    --protein: #1F6B46;
+    --fat: #E0892B;
+    --carbs: #B7CF9A;
+
+    /* темна панель */
+    --dark: #16231C;
+    --on-dark: #F4F1EA;
+    --on-dark-muted: #B9C4BC;
+    --ring-track: #2A3A31;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Manrope, system-ui, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+}
+
+.num { font-variant-numeric: tabular-nums; }
+
+.page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 28px 32px 48px;
+}
+
+/* === Шапка === */
+.topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+.logo-mark {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: var(--ink); color: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    font-family: Unbounded, sans-serif; font-weight: 600; font-size: 20px;
+}
+.logo-text { font-family: Unbounded, sans-serif; font-weight: 600; font-size: 20px; letter-spacing: -0.01em; }
+
+/* === Дві колонки === */
+.layout { display: flex; gap: 28px; align-items: flex-start; }
+.form {
+    width: 400px; flex-shrink: 0;
+    background: var(--card); border-radius: 24px; padding: 28px;
+    display: flex; flex-direction: column; gap: 26px;
+}
+.result { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+
+/* нижче цієї ширини правій колонці тісно: форма стає над результатом */
+@media (max-width: 1180px) {
+    .layout { flex-direction: column; }
+    .form, .result { width: 100%; }
+}
+
+/* === Поля форми === */
+.field { display: flex; flex-direction: column; gap: 12px; border: 0; margin: 0; padding: 0; }
+.field-label {
+    font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted);
+}
+legend.field-label { padding: 0; }
+
+.kcal {
+    width: 100%; border: 0; background: var(--field); border-radius: 16px; padding: 14px;
+    text-align: center; outline: none;
+    font-family: Unbounded, sans-serif; font-size: 30px; font-weight: 600; color: var(--ink);
+}
+
+.ratio-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; gap: 3px; }
+.ratio-bar span { display: block; }
+
+.pct-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pct { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pct-name { display: flex; align-items: center; gap: 6px; }
+.pct-box { display: flex; align-items: center; height: 48px; padding: 0 12px; border-radius: 12px; background: var(--field); }
+.pct-box input { width: 100%; border: 0; background: transparent; outline: none; font-family: inherit; font-size: 18px; font-weight: 700; color: var(--ink); }
+.pct-sign { color: var(--muted); }
+
+.dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+.btn {
+    margin-top: 4px; height: 56px; border: 0; border-radius: 16px;
+    background: var(--green); color: #fff; cursor: pointer;
+    font-family: inherit; font-size: 16px; font-weight: 700;
+}
+.btn:hover { background: var(--green-dark); }
+
+/* === Темна панель === */
+.hero {
+    background: var(--dark); color: var(--on-dark);
+    border-radius: 24px; padding: 32px 36px;
+    display: flex; align-items: center; gap: 40px;
+}
+.hero-cal { position: relative; flex-shrink: 0; width: 168px; height: 168px; }
+.ring { transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: var(--ring-track); stroke-width: 16; }
+.ring-seg { fill: none; stroke-width: 16; }
+.hero-cal-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.hero-cal-num { font-family: Unbounded, sans-serif; font-size: 32px; font-weight: 600; line-height: 1; }
+/* отвір кільця — 124 px, а цифра цього шрифту займає 0.78 розміру: довші числа робимо меншими */
+.hero-cal-num.digits-5 { font-size: 26px; }
+.hero-cal-num.digits-6 { font-size: 22px; }
+.hero-cal-unit { font-size: 13px; color: var(--on-dark-muted); margin-top: 6px; }
+.hero-macros { flex-grow: 1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 16px; }
+.macro { display: flex; flex-direction: column; gap: 4px; }
+.macro-name { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--on-dark-muted); }
+.macro-name .dot { width: 8px; height: 8px; }
+.macro-grams { font-size: 24px; font-weight: 800; white-space: nowrap; }
+.macro-pct { font-size: 12px; color: var(--on-dark-muted); }
+
+/* === Картки продуктів === */
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.card { background: var(--card); border-radius: 20px; padding: 22px; display: flex; flex-direction: column; gap: 16px; }
+.card-top { display: flex; justify-content: space-between; align-items: center; }
+.badge { padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.badge-1 { background: #E3EFE8; color: #134A30; }
+.badge-2 { background: #FBEBD7; color: #7A4410; }
+.badge-3 { background: #EDF3E4; color: #3E5226; }
+.card-kcal { font-size: 13px; color: var(--muted); }
+.card-name { font-size: 17px; font-weight: 700; }
+.card-grams { font-family: Unbounded, sans-serif; font-size: 40px; font-weight: 600; line-height: 1; }
+.card-grams span { font-size: 18px; color: var(--muted); margin-left: 4px; }
+.card-cost { padding-top: 14px; border-top: 1px solid var(--soft); font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; column-gap: 8px; justify-content: space-between; }
+.card-cost-val { color: var(--ink); font-weight: 700; white-space: nowrap; }
+/* === Картка страви === */
+.dish { gap: 14px; }
+.dish-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; column-gap: 12px; }
+.dish-macros { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.dish-macros > span { display: inline-flex; align-items: center; gap: 6px; }
+.dish-products { margin: 0; padding: 0; list-style: none; }
+.dish-products li { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 12px; padding: 10px 0; border-top: 1px solid var(--soft); font-size: 15px; font-weight: 600; }
+.dish-products li:last-child { padding-bottom: 0; }
+
+.meal-head { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; }
+.meal-name { font-family: Unbounded, sans-serif; font-size: 18px; font-weight: 600; }
+.meal-kcal { font-size: 14px; color: var(--muted); }
+
+/* === Загальна вартість === */
+.total { background: var(--card); border-radius: 20px; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; }
+.total-label { font-size: 13px; color: var(--muted); font-weight: 600; }
+.total-value { font-family: Unbounded, sans-serif; font-size: 22px; font-weight: 600; }
+
+/* === Повідомлення про помилку === */
+.error {
+    background: var(--card);
+    border-left: 4px solid var(--fat);
+    border-radius: 20px;
+    padding: 20px 24px;
+}
+.error-title { font-family: Unbounded, sans-serif; font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.error-text { color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+    .hero { flex-direction: column; align-items: center; gap: 24px; }
+    .hero-macros { width: 100%; }
+    .cards { grid-template-columns: 1fr; }
+    .page { padding: 20px; }
+}
+/* === Перемикач День / Тиждень === */
+.period-switch { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--field); }
+.period-switch label { flex: 1; cursor: pointer; }
+.period-switch input { position: absolute; opacity: 0; }
+.period-switch span { display: block; padding: 10px; border-radius: 9px; text-align: center; font-weight: 700; color: var(--muted); }
+.period-switch input:checked + span { background: var(--green); color: #fff; }
+.period-switch input:focus-visible + span { outline: 2px solid var(--green-dark); outline-offset: 2px; }
+
+/* === Дні тижня === */
+.week-day { padding: 18px 20px; border-radius: 20px; background: var(--soft); }
+.week-day summary { cursor: pointer; font-family: Unbounded, sans-serif; font-size: 16px; font-weight: 600; }
+.week-day .meal-head { margin: 20px 0 12px; }
+/* === Список покупок === */
+.shopping { display: flex; flex-direction: column; gap: 14px; padding: 22px 24px; border-radius: 20px; background: var(--card); }
+.shopping-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.shopping-table th { padding: 8px 0; border-bottom: 1px solid var(--line); text-align: left; font-size: 13px; font-weight: 600; color: var(--muted); }
+.shopping-table td { padding: 12px 0; border-bottom: 1px solid var(--soft); font-weight: 600; }
+.shopping-table tr:last-child td { border-bottom: 0; }
+.shopping-table .num-col { text-align: right; }
+
+/* === Кількість днів: поле видно, лише коли вибрано «Свій» === */
+.days-field { display: none; }
+.form:has(input[name="period"][value="custom"]:checked) .days-field { display: flex; }
+
+/* === Тижні довгого періоду === */
+.week-group { padding: 18px 20px; border-radius: 20px; background: var(--line); }
+.week-group > summary { cursor: pointer; font-family: Unbounded, sans-serif; font-size: 17px; font-weight: 600; }
+.week-group .week-day { margin-top: 14px; }
+
+/* === Навігація === */
+.topnav { display: flex; flex-wrap: wrap; gap: 16px; margin-left: auto; font-size: 14px; font-weight: 600; }
+.topnav a { color: var(--ink); text-decoration: none; }
+.topnav a:hover { color: var(--green); }
+
+/* === Збереження раціону === */
+.save-plan { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px; border-radius: 20px; background: var(--card); }
+.save-plan-name { flex: 1 1 220px; min-width: 0; height: 56px; padding: 0 16px; border: 0; border-radius: 16px; background: var(--field); font-family: inherit; font-size: 15px; color: var(--ink); }
+.save-plan-btn { margin-top: 0; padding: 0 24px; }
+
+/* === Сторінки збережених раціонів === */
+.plan-page { display: flex; flex-direction: column; gap: 16px; }
+.plan-title { margin: 0; font-family: Unbounded, sans-serif; font-size: 24px; font-weight: 600; }
+.plan-meta { margin: 0; font-size: 14px; color: var(--muted); }
+.back-link { font-size: 14px; font-weight: 600; color: var(--green); text-decoration: none; }
+.plan-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 18px 22px; border-radius: 20px; background: var(--card); color: var(--ink); text-decoration: none; }
+.plan-row:hover { outline: 2px solid var(--green); }
+.plan-row-name { font-weight: 700; overflow-wrap: anywhere; }
+.plan-row-cost { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-weight: 700; }

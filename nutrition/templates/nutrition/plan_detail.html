@@ -1,0 +1,12 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}{{ plan.name }}{% endblock %}
+
+{% block content %}
+<section class="result plan-page">
+    <a class="back-link" href="{% url 'plan_list' %}">← Усі раціони</a>
+    <h1 class="plan-title">{{ plan.name }}</h1>
+    <p class="plan-meta num">Збережено {{ plan.created_at|date:"d.m.Y H:i" }} · днів: {{ plan.days_count }} · {{ plan.calories }} ккал на день. Вартість — за поточними цінами.</p>
+    {% include 'nutrition/_result.html' %}
+</section>
+{% endblock %}

@@ -1,0 +1,14 @@
+# Віртуальне середовище: створюється заново з requirements.txt
+.venv/
+
+# База даних: адмін-акаунт і збережені раціони. Продукти й страви лежать у nutrition/fixtures/
+db.sqlite3
+
+# Особистий журнал навчання
+PROGRESS.md
+
+# Службові файли Python, PyCharm і macOS
+__pycache__/
+*.pyc
+.idea/
+.DS_Store

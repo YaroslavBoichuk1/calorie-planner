@@ -1,0 +1,21 @@
+<div class="shopping">
+    <div class="meal-name">Список покупок</div>
+    <table class="shopping-table">
+        <thead>
+            <tr>
+                <th>Продукт</th>
+                <th class="num-col">Кількість</th>
+                <th class="num-col">Вартість</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in shopping %}
+            <tr>
+                <td>{{ row.product.name }}</td>
+                <td class="num-col num">{% if row.pieces %}{{ row.pieces }} шт{% else %}{{ row.grams|floatformat:0 }} г{% endif %}</td>
+                <td class="num-col num">{{ row.cost|floatformat:2 }} грн</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

@@ -1,0 +1,18 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}Збережені раціони{% endblock %}
+
+{% block content %}
+<section class="plan-page">
+    <h1 class="plan-title">Збережені раціони</h1>
+    {% for plan in plans %}
+    <a class="plan-row" href="{% url 'plan_detail' plan.pk %}">
+        <span class="plan-row-name">{{ plan.name }}</span>
+        <span class="plan-meta num">{{ plan.created_at|date:"d.m.Y H:i" }} · днів: {{ plan.days_count }} · {{ plan.calories }} ккал на день</span>
+        <span class="plan-row-cost num">{{ plan.total_cost|floatformat:2 }} грн</span>
+    </a>
+    {% empty %}
+    <p class="plan-meta">Поки немає збережених раціонів. Склади раціон у <a href="{% url 'planner' %}">планувальнику</a> й натисни «Зберегти раціон».</p>
+    {% endfor %}
+</section>
+{% endblock %}

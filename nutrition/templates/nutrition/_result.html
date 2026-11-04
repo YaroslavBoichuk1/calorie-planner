@@ -1,0 +1,50 @@
+<!-- Темна панель -->
+<div class="hero">
+    <div class="hero-cal">
+        <svg class="ring" width="168" height="168" viewBox="0 0 168 168">
+            <circle class="ring-track" cx="84" cy="84" r="70"></circle>
+            {% for m in macros %}
+            <circle class="ring-seg" cx="84" cy="84" r="70"
+                    stroke="var(--{{ m.color }})"
+                    stroke-dasharray="{{ m.dash }}"
+                    stroke-dashoffset="{{ m.offset }}"></circle>
+            {% endfor %}
+        </svg>
+        <div class="hero-cal-center">
+            <div class="hero-cal-num num digits-{{ totals.calories|floatformat:0|length }}">{{ totals.calories|floatformat:0 }}</div>
+            <div class="hero-cal-unit">ккал</div>
+        </div>
+    </div>
+    <div class="hero-macros">
+        {% for m in macros %}
+        <div class="macro">
+            <div class="macro-name"><span class="dot" style="background: var(--{{ m.color }})"></span>{{ m.name }}</div>
+            <div class="macro-grams num">{{ m.grams|floatformat:1 }} г</div>
+            <div class="macro-pct num">{{ m.actual|floatformat:0 }}% · ціль {{ m.target }}%</div>
+        </div>
+        {% endfor %}
+
+    </div>
+</div>
+
+<!-- Прийоми: тиждень по днях або один день -->
+{% if plan_weeks %}
+    {% for week in plan_weeks %}
+    <details class="week-group" {% if forloop.first %}open{% endif %}>
+        <summary>{{ week.name }}</summary>
+        {% include 'nutrition/_days.html' with days=week.days %}
+    </details>
+    {% endfor %}
+{% elif period != 'day' %}
+    {% include 'nutrition/_days.html' with days=plan_days %}
+{% else %}
+    {% include 'nutrition/_day.html' %}
+{% endif %}
+
+{% include 'nutrition/_shopping.html' %}
+
+<!-- Загальна вартість -->
+<div class="total">
+    <div class="total-label">Вартість {% if period == 'week' %}тижня{% elif period == 'custom' %}періоду{% else %}дня{% endif %}</div>
+    <div class="total-value num">{{ totals.cost|floatformat:2 }} грн</div>
+</div>
