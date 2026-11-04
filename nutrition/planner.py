@@ -6,6 +6,7 @@ MIN_DAY_CALORIES = 0     # ккал на день
 MAX_DAY_CALORIES = 10000   # ккал на день: вище — майже напевно помилка вводу
 NO_PRODUCTS_MESSAGE = "Бракує продуктів для раціону. Додай їх в адмінці."
 NO_RECIPES_MESSAGE = "Бракує страв для раціону. Додай їх в адмінці."
+VARIETY_PENALTY = 0.015    # скільки промаху БЖВ «коштує» кожне вживання страви за період: більше — різноманітніше, менше — точніше
 DAY_PERCENTAGE = {'Сніданок': 0.25, 'Обід': 0.40, 'Вечеря': 0.35}
 WEEK_DAYS = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота', 'Неділя']
 
@@ -89,9 +90,7 @@ def period_totals(days):
     """Підсумки за період: складає day_totals усіх днів → {calories, protein, fat, carbs, cost}."""
     totals = {'calories' : 0, 'protein' : 0, 'fat' : 0, 'carbs': 0, 'cost' : 0}
     for day_info in days:
-        one_day = day_totals(day_info['day'])
-        for key in totals:
-            totals[key] += one_day[key]
+        add_totals(totals, day_totals(day_info['day']))
     return totals
 
 
@@ -110,14 +109,26 @@ def day_totals(meals):
     """Підсумки за день: складає meal_totals усіх прийомів → {calories, protein, fat, carbs, cost}."""
     totals = {'calories' : 0, 'protein' : 0, 'fat' : 0, 'carbs': 0, 'cost' : 0}
     for meal_info in meals:
-        one_meal = meal_totals(meal_info['meal'])
-        for key in totals:
-            totals[key] += one_meal[key]
+        add_totals(totals, meal_totals(meal_info['meal']))
     return totals
 
 
+def add_cost(total, cost):
+    """Додає вартість до суми. Якщо хоча б одна вартість невідома (None), невідома й сума."""
+    if total is None or cost is None:
+        return None
+    return total + cost
+
+
+def add_totals(totals, part):
+    """Додає підсумки частини (прийому чи дня) до загальних підсумків."""
+    for key in ('calories', 'protein', 'fat', 'carbs'):
+        totals[key] += part[key]
+    totals['cost'] = add_cost(totals['cost'], part['cost'])
+
+
 def meal_totals(meal):
-    """Підсумки одного прийому: калорії, БЖВ і вартість усіх його продуктів."""
+    """Підсумки одного прийому: калорії, БЖВ і вартість усіх його продуктів (cost = None, якщо якоїсь ціни нема)."""
     totals = {'calories' : 0, 'protein' : 0, 'fat' : 0, 'carbs': 0, 'cost' : 0}
     for item in meal:
         product = item['product']
@@ -126,7 +137,7 @@ def meal_totals(meal):
         totals['protein'] += product.protein_for(grams)
         totals['fat'] += product.fat_for(grams)
         totals['carbs'] += product.carbs_for(grams)
-        totals['cost'] += product.cost_for(grams)
+        totals['cost'] = add_cost(totals['cost'], product.cost_for(grams))
     return totals
 
 
@@ -230,17 +241,18 @@ def day_miss(day_recipes, shares, targets):
     return miss
 
 
-def choose_day_recipes(candidates, shares, targets, previous_day, times_used):
+def choose_day_recipes(candidates, shares, targets, previous_day, times_used, dish_uses):
     """Вибирає по страві на кожен прийом дня: перебирає всі поєднання й бере найкраще за правилами в rank."""
     def rank(day_recipes):
         """Оцінка поєднання: кортежі порівнюються зліва направо, тож перші правила важливіші, а менше — краще."""
         repeats_today = len(day_recipes) - len(set(day_recipes))
         repeats_from_yesterday = len(set(day_recipes) & set(previous_day))
+        uses_in_period = sum(dish_uses.get(recipe, 0) for recipe in day_recipes)
         return (
             repeats_today,
             repeats_from_yesterday,
             times_used.get(day_recipes, 0),
-            day_miss(day_recipes, shares, targets),
+            day_miss(day_recipes, shares, targets) + VARIETY_PENALTY * uses_in_period,
         )
 
     return min(itertools.product(*candidates), key=rank)
@@ -283,10 +295,13 @@ def build_recipe_period(recipes, days_count, day_calories, protein_pct, fat_pct,
     targets = {'protein': protein_pct, 'fat': fat_pct, 'carbs': carbs_pct}
     days = []
     previous_day = ()
-    times_used = {}
+    times_used = {}    # скільки разів було кожне поєднання страв
+    dish_uses = {}     # скільки разів була кожна страва
     for i in range(days_count):
-        day_recipes = choose_day_recipes(candidates, shares, targets, previous_day, times_used)
+        day_recipes = choose_day_recipes(candidates, shares, targets, previous_day, times_used, dish_uses)
         times_used[day_recipes] = times_used.get(day_recipes, 0) + 1
+        for recipe in day_recipes:
+            dish_uses[recipe] = dish_uses.get(recipe, 0) + 1
         previous_day = day_recipes
         days.append({'name': day_name(i, days_count), 'day': build_recipe_day(day_recipes, day_calories)})
     return days

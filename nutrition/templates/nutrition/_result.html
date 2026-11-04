@@ -43,8 +43,10 @@
 
 {% include 'nutrition/_shopping.html' %}
 
-<!-- Загальна вартість -->
+{% if totals.cost is not None %}
+<!-- Загальна вартість: лише якщо відомі ціни всіх продуктів -->
 <div class="total">
     <div class="total-label">Вартість {% if period == 'week' %}тижня{% elif period == 'custom' %}періоду{% else %}дня{% endif %}</div>
     <div class="total-value num">{{ totals.cost|floatformat:2 }} грн</div>
 </div>
+{% endif %}

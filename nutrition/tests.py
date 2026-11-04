@@ -3,11 +3,15 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import requests
+from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
 from . import silpo
-from .models import Product, Recipe, RecipeIngredient, SilpoClient
+from .models import MealPlan, Product, Recipe, RecipeIngredient, SilpoClient
+from .planner import (
+    DAY_PERCENTAGE, NO_RECIPES_MESSAGE, build_recipe_period, day_totals, meal_totals, period_totals,
+)
 
 
 def fake_response(data, status=200, content_type='application/json'):
@@ -204,6 +208,158 @@ class SilpoTokenTests(SimpleTestCase):
             silpo.access_token({})
 
 
+class RecipeDataMixin:
+    """Страви для тестів двигуна: білкові, жирні й вуглеводні, щоб було з чого вибирати."""
+
+    def make_recipes(self):
+        """Шість страв по 400 ккал із різним БЖВ; одна лише на сніданок."""
+        protein = Product.objects.create(name='білок', calories=400, proteins=100, fats=0, carbs=0)
+        fat = Product.objects.create(name='жир', calories=900, proteins=0, fats=100, carbs=0)
+        carb = Product.objects.create(name='вуглеводи', calories=400, proteins=0, fats=0, carbs=100)
+        self.products = {'protein': protein, 'fat': fat, 'carb': carb}
+        mixes = {
+            'Страва А': (40, 15, 50), 'Страва Б': (30, 20, 40), 'Страва В': (20, 25, 30),
+            'Страва Г': (50, 10, 40), 'Страва Д': (25, 15, 60),
+        }
+        for name, (protein_grams, fat_grams, carb_grams) in mixes.items():
+            self.make_recipe(name, protein_grams, fat_grams, carb_grams)
+        self.make_recipe('Сніданкова', 30, 15, 40, for_lunch=False, for_dinner=False)
+
+    def make_recipe(self, name, protein_grams, fat_grams, carb_grams, **flags):
+        """Страва з трьох продуктів із вказаними грамами."""
+        recipe = Recipe.objects.create(name=name, **flags)
+        RecipeIngredient.objects.create(recipe=recipe, product=self.products['protein'], grams=protein_grams)
+        RecipeIngredient.objects.create(recipe=recipe, product=self.products['fat'], grams=fat_grams)
+        RecipeIngredient.objects.create(recipe=recipe, product=self.products['carb'], grams=carb_grams)
+        return recipe
+
+    def build(self, days_count=7, calories=2000):
+        """Раціон на days_count днів із ціллю 30/30/40."""
+        recipes = Recipe.objects.prefetch_related('ingredients__product')
+        return build_recipe_period(recipes, days_count, calories, 0.3, 0.3, 0.4)
+
+
+def menu(day_info):
+    """Назви страв одного дня."""
+    return [meal['recipe_name'] for meal in day_info['day']]
+
+
+class RecipeEngineTests(RecipeDataMixin, TestCase):
+    """Правила підбору страв."""
+
+    def setUp(self):
+        """Шість страв у базі."""
+        self.make_recipes()
+
+    def test_every_meal_matches_its_calories(self):
+        for day_info in self.build(days_count=3):
+            self.assertEqual([meal['name'] for meal in day_info['day']], list(DAY_PERCENTAGE))
+            for meal in day_info['day']:
+                self.assertAlmostEqual(meal_totals(meal['meal'])['calories'], meal['calories'])
+            self.assertAlmostEqual(day_totals(day_info['day'])['calories'], 2000)
+
+    def test_portions_scale_to_calories(self):
+        small = self.build(days_count=1, calories=1000)[0]['day']
+        large = self.build(days_count=1, calories=2000)[0]['day']
+        self.assertEqual(menu({'day': small}), menu({'day': large}))
+        self.assertAlmostEqual(large[0]['meal'][0]['grams'], small[0]['meal'][0]['grams'] * 2)
+
+    def test_no_dish_repeats_in_a_day_or_from_yesterday(self):
+        days = self.build(days_count=7)
+        for index, day_info in enumerate(days):
+            names = menu(day_info)
+            self.assertEqual(len(set(names)), 3)
+            if index:
+                self.assertFalse(set(names) & set(menu(days[index - 1])))
+
+    def test_breakfast_only_dish_stays_at_breakfast(self):
+        for day_info in self.build(days_count=14):
+            self.assertNotIn('Сніданкова', menu(day_info)[1:])
+
+    def test_same_request_gives_same_plan(self):
+        self.assertEqual([menu(day) for day in self.build()], [menu(day) for day in self.build()])
+
+    def test_week_uses_many_dishes(self):
+        names = [name for day in self.build(days_count=7) for name in menu(day)]
+        self.assertEqual(len(set(names)), 6)
+
+    def test_one_dish_still_builds_a_plan(self):
+        Recipe.objects.exclude(name='Страва А').delete()
+        self.assertEqual(menu(self.build(days_count=1)[0]), ['Страва А'] * 3)
+
+    def test_dish_without_calories_is_skipped(self):
+        Recipe.objects.create(name='Порожня')
+        for day_info in self.build(days_count=7):
+            self.assertNotIn('Порожня', menu(day_info))
+
+    def test_no_dishes_gives_clear_message(self):
+        Recipe.objects.all().delete()
+        with self.assertRaisesMessage(ValueError, NO_RECIPES_MESSAGE):
+            self.build()
+
+    def test_meal_without_dish_gives_clear_message(self):
+        Recipe.objects.update(for_dinner=False)
+        with self.assertRaisesMessage(ValueError, 'Немає страви на прийом «Вечеря»'):
+            self.build()
+
+
+class NoPricesTests(RecipeDataMixin, TestCase):
+    """Стандартний варіант: продукти без цін."""
+
+    def setUp(self):
+        """Страви, у продуктів яких цін немає."""
+        self.make_recipes()
+
+    def test_totals_have_no_cost(self):
+        days = self.build(days_count=2)
+        self.assertIsNone(meal_totals(days[0]['day'][0]['meal'])['cost'])
+        self.assertIsNone(day_totals(days[0]['day'])['cost'])
+        self.assertIsNone(period_totals(days)['cost'])
+        self.assertAlmostEqual(period_totals(days)['calories'], 4000)
+
+    def test_one_missing_price_hides_the_whole_cost(self):
+        self.products['protein'].price = 10
+        self.products['protein'].save()
+        days = self.build(days_count=1)
+        self.assertIsNone(day_totals(days[0]['day'])['cost'])
+
+    def test_all_prices_known_shows_cost(self):
+        for product in self.products.values():
+            product.price = 10
+            product.save()
+        cost = day_totals(self.build(days_count=1)[0]['day'])['cost']
+        self.assertGreater(cost, 0)
+        self.assertContains(self.client.get('/'), 'Вартість дня')
+
+    def test_pages_work_without_prices_and_show_no_cost(self):
+        for url in ['/', '/?period=week', '/?period=custom&days=31']:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200)
+                self.assertNotContains(response, 'Вартість')
+                self.assertNotContains(response, 'грн')
+                self.assertContains(response, 'Список покупок')
+
+    def test_saved_plan_without_prices(self):
+        response = self.client.post(reverse('plan_save'), {'query': 'period=week', 'name': 'Без цін'})
+        plan = MealPlan.objects.get(name='Без цін')
+        self.assertIsNone(plan.total_cost())
+        self.assertRedirects(response, reverse('plan_detail', args=[plan.pk]))
+        for url in [reverse('plan_detail', args=[plan.pk]), reverse('plan_list')]:
+            page = self.client.get(url)
+            self.assertEqual(page.status_code, 200)
+            self.assertNotContains(page, 'грн')
+
+    def test_site_credits_the_data_source(self):
+        self.assertContains(self.client.get('/'), 'USDA FoodData Central')
+
+    def test_admin_list_works_without_prices(self):
+        user = get_user_model().objects.create_superuser('admin-test', password=None)
+        self.client.force_login(user)
+        self.assertEqual(self.client.get('/admin/nutrition/recipe/').status_code, 200)
+        self.assertEqual(self.client.get('/admin/nutrition/product/').status_code, 200)
+
+
 def silpo_item(name, price, ratio=None, weighted=False, step=1, stock=10, available=True, slug='slug'):
     """Товар у форматі, який повертає пошук «Сільпо»."""
     return {
@@ -230,11 +386,15 @@ class SilpoOfferTests(SimpleTestCase):
             with self.subTest(text=text):
                 self.assertEqual(silpo.parse_pack(text), expected)
 
-    def test_name_needs_whole_words(self):
+    def test_name_must_start_with_first_word_and_contain_the_rest(self):
         self.assertTrue(silpo.name_matches('Рис Trapeza довгозернистий', 'рис'))
-        self.assertTrue(silpo.name_matches('Філе куряче копчене', 'куряче філе'))
+        self.assertTrue(silpo.name_matches('Крупа Хатинка гречана ядриця', 'крупа гречана'))
         self.assertFalse(silpo.name_matches('Рисове борошно', 'рис'))
         self.assertFalse(silpo.name_matches('Салат з курячим філе', 'куряче філе'))
+        self.assertFalse(silpo.name_matches('Корм для собак яловичина', 'яловичина'))
+        self.assertFalse(silpo.name_matches('Нектар Вогняний томат', 'томат'))
+        self.assertFalse(silpo.name_matches('', 'рис'))
+        self.assertFalse(silpo.name_matches('Рис', ''))
 
     def test_pack_is_rounded_up_to_whole_packs(self):
         offer = silpo.make_offer(silpo_item('Крупа', 99, '800г'), self.grechka, 900)

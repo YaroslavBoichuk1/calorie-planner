@@ -293,9 +293,12 @@ def parse_pack(display_ratio):
 
 
 def name_matches(name, query):
-    """Чи є в назві товару всі слова пошуку як окремі слова: «рис» не знайде «рисове борошно»."""
+    """Чи годиться назва товару під пошук: починається з першого слова пошуку й містить решту як окремі слова. Так «рис» не знайде «рисове борошно», а «яловичина» — корм для собак."""
     words = re.findall(r'\w+', name.lower())
-    return all(word in words for word in query.lower().split())
+    query_words = query.lower().split()
+    if not words or not query_words or words[0] != query_words[0]:
+        return False
+    return all(word in words for word in query_words)
 
 
 def whole_units(needed, unit_size):

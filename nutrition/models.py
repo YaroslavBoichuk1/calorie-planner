@@ -11,13 +11,14 @@ class Product(models.Model):
     ]
     unit = models.CharField(max_length=2, choices=UNIT_CHOICES, default='g')
     name = models.CharField(max_length=200)
-    price = models.DecimalField(max_digits=6, decimal_places=2)
+    price = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)   # необов'язкова: реальні ціни — із «Сільпо»
     calories = models.IntegerField()
     proteins = models.DecimalField(max_digits=6, decimal_places=1)
     fats = models.DecimalField(max_digits=6, decimal_places=1)
     carbs = models.DecimalField(max_digits=6, decimal_places=1)
     grams_per_piece = models.FloatField(null=True, blank=True)
     silpo_search = models.CharField('Пошук у «Сільпо»', max_length=100, blank=True)   # якщо порожньо — шукаємо за назвою
+    fdc_id = models.PositiveIntegerField('USDA FDC ID', null=True, blank=True)        # звідки взято БЖВ (USDA FoodData Central)
 
     def __str__(self):
         """Назва продукту — так він показується в адмінці й списках."""
@@ -33,7 +34,9 @@ class Product(models.Model):
         return target_calories / (self.calories / 100)
 
     def cost_for(self, grams):
-        """Скільки коштують вказані грами продукту (ціна штучного продукту — за одну штуку)."""
+        """Скільки коштують вказані грами продукту (ціна штучного продукту — за одну штуку); None, якщо ціна невідома."""
+        if self.price is None:
+            return None
         if self.unit == 'pc' and self.grams_per_piece:
             return float(self.price) * grams / self.grams_per_piece
         return float(self.price) / 100 * grams
@@ -90,8 +93,9 @@ class MealPlan(models.Model):
         return self.name
 
     def total_cost(self):
-        """Вартість усього раціону за поточними цінами продуктів."""
-        return sum(item.product.cost_for(item.grams) for item in self.items.all())
+        """Вартість усього раціону за поточними цінами продуктів; None, якщо хоча б одна ціна невідома."""
+        costs = [item.product.cost_for(item.grams) for item in self.items.all()]
+        return None if None in costs else sum(costs)
 
 
 class PlanItem(models.Model):

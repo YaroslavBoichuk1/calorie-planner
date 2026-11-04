@@ -9,7 +9,7 @@
     <a class="plan-row" href="{% url 'plan_detail' plan.pk %}">
         <span class="plan-row-name">{{ plan.name }}</span>
         <span class="plan-meta num">{{ plan.created_at|date:"d.m.Y H:i" }} · днів: {{ plan.days_count }} · {{ plan.calories }} ккал на день</span>
-        <span class="plan-row-cost num">{{ plan.total_cost|floatformat:2 }} грн</span>
+        {% with cost=plan.total_cost %}{% if cost is not None %}<span class="plan-row-cost num">{{ cost|floatformat:2 }} грн</span>{% endif %}{% endwith %}
     </a>
     {% empty %}
     <p class="plan-meta">Поки немає збережених раціонів. Склади раціон у <a href="{% url 'planner' %}">планувальнику</a> й натисни «Зберегти раціон».</p>

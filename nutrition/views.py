@@ -118,6 +118,7 @@ def result_context(plan_days, period, protein_pct, fat_pct, carbs_pct):
         if len(plan_days) > len(WEEK_DAYS):
             context['plan_weeks'] = split_into_weeks(plan_days)
     context['shopping'] = shopping_rows(plan_days)
+    context['shopping_has_cost'] = totals['cost'] is not None
 
     # для темної панелі: розклад БЖВ (грами, фактичний % від калорій, ціль %)
     total_cal = totals['calories'] or 1

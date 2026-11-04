@@ -8,7 +8,7 @@
 <article class="card dish">
     <div class="dish-top">
         <div class="card-name">{{ m.recipe_name }}</div>
-        <div class="card-cost-val num">{{ m.totals.cost|floatformat:2 }} грн</div>
+        {% if m.totals.cost is not None %}<div class="card-cost-val num">{{ m.totals.cost|floatformat:2 }} грн</div>{% endif %}
     </div>
     <div class="dish-macros num">
         <span><span class="dot" style="background: var(--protein)"></span>Білок {{ m.totals.protein|floatformat:0 }} г</span>
@@ -35,7 +35,7 @@
         </div>
         <div class="card-name">{{ item.product.name }}</div>
         <div class="card-grams num">{{ item.grams|floatformat:0 }}<span>г</span></div>
-        <div class="card-cost num"><span>Вартість</span><span class="card-cost-val">{{ item.cost|floatformat:2 }} грн</span></div>
+        {% if item.cost is not None %}<div class="card-cost num"><span>Вартість</span><span class="card-cost-val">{{ item.cost|floatformat:2 }} грн</span></div>{% endif %}
     </article>
     {% endfor %}
 </div>

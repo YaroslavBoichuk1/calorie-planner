@@ -5,7 +5,7 @@
             <tr>
                 <th>Продукт</th>
                 <th class="num-col">Кількість</th>
-                <th class="num-col">Вартість</th>
+                {% if shopping_has_cost %}<th class="num-col">Вартість</th>{% endif %}
             </tr>
         </thead>
         <tbody>
@@ -13,7 +13,7 @@
             <tr>
                 <td>{{ row.product.name }}</td>
                 <td class="num-col num">{% if row.pieces %}{{ row.pieces }} шт{% else %}{{ row.grams|floatformat:0 }} г{% endif %}</td>
-                <td class="num-col num">{{ row.cost|floatformat:2 }} грн</td>
+                {% if shopping_has_cost %}<td class="num-col num">{{ row.cost|floatformat:2 }} грн</td>{% endif %}
             </tr>
             {% endfor %}
         </tbody>

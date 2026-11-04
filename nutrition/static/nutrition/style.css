@@ -226,6 +226,10 @@ legend.field-label { padding: 0; }
 .total:has(.silpo-text) { flex-wrap: wrap; gap: 10px 20px; }
 .total:has(.silpo-text) > div:first-child { flex: 1 1 240px; min-width: 0; }
 
+/* === Нижній рядок сторінки === */
+.site-footer { margin-top: 32px; font-size: 13px; color: var(--muted); }
+.site-footer a { color: inherit; }
+
 /* === Повідомлення після дії === */
 .message { margin-bottom: 20px; padding: 14px 20px; border-left: 4px solid var(--green); border-radius: 14px; background: var(--card); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .message-error { border-left-color: var(--fat); }
