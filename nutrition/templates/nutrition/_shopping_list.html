@@ -1,10 +1,31 @@
+<div class="bought-progress" data-bought-progress data-total="{{ total_count }}">
+    <span class="bought-text num">Куплено <span data-bought-count>{{ bought_count }}</span> із {{ total_count }}</span>
+    <span class="bar" aria-hidden="true"><span data-bought-bar style="width: {% widthratio bought_count total_count|default:1 100 %}%"></span></span>
+    <form method="post" action="{% url 'shopping_check' %}" class="bought-reset">
+        {% csrf_token %}
+        <input type="hidden" name="list_key" value="{{ list_key }}">
+        <input type="hidden" name="reset" value="1">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit" class="link-button">Зняти всі галочки</button>
+    </form>
+</div>
 <ul class="shopping-list">
     {% for row in rows %}
-    <li>
+    <li class="{% if row.bought %}is-bought{% endif %}">
         <span class="swatch" style="background: {{ row.color }}" aria-hidden="true"></span>
         <span class="shopping-name">{{ row.product.name }}</span>
         <span class="shopping-amount num">{% if row.pieces %}{{ row.pieces }} шт{% else %}{{ row.grams|floatformat:0 }} г{% endif %}</span>
         {% if cost is not None %}<span class="shopping-cost num">{{ row.cost|floatformat:2 }} грн</span>{% endif %}
+        <form method="post" action="{% url 'shopping_check' %}" class="check-form">
+            {% csrf_token %}
+            <input type="hidden" name="list_key" value="{{ list_key }}">
+            <input type="hidden" name="product" value="{{ row.product.pk }}">
+            <input type="hidden" name="bought" value="{% if row.bought %}0{% else %}1{% endif %}">
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button type="submit" class="check" aria-pressed="{% if row.bought %}true{% else %}false{% endif %}" aria-label="Куплено: {{ row.product.name }}">
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"></path></svg>
+            </button>
+        </form>
     </li>
     {% empty %}
     <li class="muted">Список покупок порожній.</li>

@@ -276,6 +276,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .shopping-amount { font-size: 14px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .shopping-cost { min-width: 90px; text-align: right; font-size: 16px; font-weight: 800; white-space: nowrap; }
 
+/* === Галочки «куплено» === */
+.bought-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.bought-text { font-size: 14px; font-weight: 700; }
+.bought-progress .bar { flex: 1 1 160px; height: 8px; }
+.bought-progress .bar span { height: 8px; background: var(--accent); transition: width .3s; }
+.link-button { padding: 0; border: 0; background: none; font-family: inherit; font-size: 13px; font-weight: 700; color: var(--muted-strong); text-decoration: underline; cursor: pointer; min-height: 44px; }
+.check-form { display: flex; flex-shrink: 0; }
+.check {
+    width: 44px; height: 44px; padding: 0; border: 2px solid var(--border); border-radius: 14px;
+    background: var(--card); color: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.check:hover { border-color: var(--ink); }
+.check[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #FFFFFF; }
+.shopping-list li.is-bought .shopping-name { text-decoration: line-through; }
+.shopping-list li.is-bought .shopping-name, .shopping-list li.is-bought .shopping-amount, .shopping-list li.is-bought .swatch { opacity: 0.5; }
+
 /* === Збережені раціони === */
 .plan-rows { display: flex; flex-direction: column; gap: 10px; }
 .plan-row {

@@ -379,6 +379,85 @@ class SwapTests(RecipeDataMixin, TestCase):
         self.assertEqual(html.count('<details class="meal-fold" open>'), 1)
 
 
+class BoughtTests(RecipeDataMixin, TestCase):
+    """Галочки «куплено» у списку покупок."""
+
+    def setUp(self):
+        """Страви в базі й ключ списку для тижня."""
+        self.make_recipes()
+        self.key = 'q:period=week'
+
+    def check(self, product, bought=True, key=None, **extra):
+        """Ставить або знімає галочку так, як це робить форма."""
+        data = {'list_key': key or self.key, 'product': product.pk, 'bought': '1' if bought else '0', 'next': '/shopping/?period=week'}
+        return self.client.post(reverse('shopping_check'), data, **extra)
+
+    def test_list_starts_unchecked(self):
+        html = self.client.get('/shopping/', {'period': 'week'}).content.decode()
+        self.assertIn('Куплено <span data-bought-count>0</span> із 3', html)
+        self.assertEqual(html.count('aria-pressed="false"'), 3)
+
+    def test_check_and_uncheck_without_javascript(self):
+        response = self.check(self.products['protein'])
+        self.assertRedirects(response, '/shopping/?period=week', fetch_redirect_response=False)
+        html = self.client.get('/shopping/', {'period': 'week'}).content.decode()
+        self.assertIn('Куплено <span data-bought-count>1</span> із 3', html)
+        self.assertIn('class="is-bought"', html)
+        self.check(self.products['protein'], bought=False)
+        self.assertIn('data-bought-count>0<', self.client.get('/shopping/', {'period': 'week'}).content.decode())
+
+    def test_javascript_request_gets_json(self):
+        response = self.check(self.products['fat'], HTTP_X_REQUESTED_WITH='fetch')
+        self.assertEqual(response.json(), {'ok': True})
+        self.assertEqual(self.client.session['bought'][self.key], [self.products['fat'].pk])
+
+    def test_each_plan_has_its_own_list(self):
+        self.check(self.products['protein'])
+        self.assertIn('data-bought-count>0<', self.client.get('/shopping/', {'period': 'day'}).content.decode())
+        self.assertIn('data-bought-count>1<', self.client.get('/shopping/', {'period': 'week'}).content.decode())
+
+    def test_reset_clears_the_list(self):
+        self.check(self.products['protein'])
+        self.check(self.products['fat'])
+        self.client.post(reverse('shopping_check'), {'list_key': self.key, 'reset': '1', 'next': '/'})
+        self.assertNotIn(self.key, self.client.session['bought'])
+
+    def test_bad_input_is_ignored(self):
+        for data in [
+            {'list_key': 'evil', 'product': '1', 'bought': '1'},
+            {'list_key': 'plan:abc', 'product': '1', 'bought': '1'},
+            {'list_key': 'q:' + 'x' * 1000, 'product': '1', 'bought': '1'},
+            {'list_key': self.key, 'product': '²', 'bought': '1'},
+            {'list_key': self.key, 'product': '9' * 40, 'bought': '1'},
+        ]:
+            with self.subTest(data=data):
+                response = self.client.post(reverse('shopping_check'), {**data, 'next': 'https://evil.example/'})
+                self.assertRedirects(response, '/', fetch_redirect_response=False)
+        self.assertEqual(self.client.session.get('bought', {}), {})
+
+    def test_only_recent_lists_are_kept(self):
+        for index in range(15):
+            self.check(self.products['protein'], key=f'q:calories={1000 + index}')
+        lists = self.client.session['bought']
+        self.assertEqual(len(lists), 10)
+        self.assertIn('q:calories=1014', lists)
+        self.assertNotIn('q:calories=1000', lists)
+
+    def test_needs_post_and_csrf(self):
+        self.assertEqual(self.client.get(reverse('shopping_check')).status_code, 405)
+        guarded = self.client_class(enforce_csrf_checks=True)
+        self.assertEqual(guarded.post(reverse('shopping_check'), {'list_key': self.key}).status_code, 403)
+
+    def test_saved_plan_has_its_own_checks(self):
+        self.client.post(reverse('plan_save'), {'query': 'period=week', 'name': 'Мій'})
+        plan = MealPlan.objects.get(name='Мій')
+        self.check(self.products['carb'], key=f'plan:{plan.pk}')
+        html = self.client.get(reverse('plan_detail', args=[plan.pk])).content.decode()
+        self.assertIn('data-bought-count>1<', html)
+        self.assertIn('data-bought-count>0<', self.client.get('/shopping/', {'period': 'week'}).content.decode())
+
+
+
 class NoPricesTests(RecipeDataMixin, TestCase):
     """Стандартний варіант: продукти без цін."""
 

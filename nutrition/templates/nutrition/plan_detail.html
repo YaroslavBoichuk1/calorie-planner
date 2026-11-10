@@ -1,4 +1,5 @@
 {% extends 'nutrition/base.html' %}
+{% load static %}
 
 {% block title %}{{ plan.name }}{% endblock %}
 
@@ -19,3 +20,5 @@
     {% if cost is not None %}<div class="summary-line"><span>Разом</span><span class="num summary-strong">{{ cost|floatformat:2 }} грн</span></div>{% endif %}
 </section>
 {% endblock %}
+
+{% block scripts %}<script src="{% static 'nutrition/shopping.js' %}" defer></script>{% endblock %}

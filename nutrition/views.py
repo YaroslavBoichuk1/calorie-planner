@@ -2,7 +2,7 @@ import math
 from urllib.parse import urlencode
 
 from django.contrib import messages
-from django.http import Http404, QueryDict
+from django.http import Http404, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -38,6 +38,9 @@ def parse_days_count(raw_days):
 
 PLAN_KEYS = ('period', 'days', 'calories', 'protein_pct', 'fat_pct', 'carbs_pct', 'swaps')   # параметри, що описують сам раціон
 MAX_SWAPS = 100               # більше замін в адресі не читаємо
+BOUGHT_KEY = 'bought'         # у сесії: що вже куплено {ключ списку: [id продуктів]}
+MAX_BOUGHT_LISTS = 10         # скільки списків пам'ятаємо; найстаріші забуваємо
+MAX_LIST_KEY = 600            # довший ключ списку не приймаємо
 PERIOD_LABELS = {'day': 'День', 'week': 'Тиждень', 'custom': 'Свій'}
 SHORT_DAY_NAMES = {
     'Понеділок': 'Пн', 'Вівторок': 'Вт', 'Середа': 'Ср', 'Четвер': 'Чт',
@@ -357,6 +360,68 @@ def goal_view(request):
     })
 
 
+def list_key_for_query(query):
+    """Ключ списку покупок раціону з адреси: той самий раціон із тими самими замінами — той самий список."""
+    return f'q:{query}'
+
+
+def list_key_for_plan(plan):
+    """Ключ списку покупок збереженого раціону."""
+    return f'plan:{plan.pk}'
+
+
+def valid_list_key(key):
+    """Чи схожий ключ списку на наш: «q:…» або «plan:<число>», і не задовгий."""
+    if not isinstance(key, str) or len(key) > MAX_LIST_KEY:
+        return False
+    return key.startswith('q:') or (key.startswith('plan:') and key[5:].isascii() and key[5:].isdigit())
+
+
+def bought_ids(session, key):
+    """Id продуктів, позначених купленими в цьому списку."""
+    return set(session.get(BOUGHT_KEY, {}).get(key, []))
+
+
+def set_bought(session, key, product_id, bought):
+    """Ставить або знімає галочку «куплено». Пам'ятає лише останні MAX_BOUGHT_LISTS списків."""
+    lists = dict(session.get(BOUGHT_KEY, {}))
+    ids = set(lists.pop(key, []))
+    if bought:
+        ids.add(product_id)
+    else:
+        ids.discard(product_id)
+    if ids:
+        lists[key] = sorted(ids)            # пересуваємо список у кінець: він тепер найсвіжіший
+    while len(lists) > MAX_BOUGHT_LISTS:
+        lists.pop(next(iter(lists)))
+    session[BOUGHT_KEY] = lists
+
+
+def mark_bought(rows, bought):
+    """Позначає рядки списку покупок купленими → (скільки куплено, скільки всього)."""
+    for row in rows:
+        row['bought'] = row['product'].pk in bought
+    return sum(1 for row in rows if row['bought']), len(rows)
+
+
+@require_POST
+def shopping_check_view(request):
+    """Галочка «куплено» в списку покупок: ставить, знімає або скидає всі. Без JavaScript повертає на сторінку списку."""
+    key = request.POST.get('list_key', '')
+    if valid_list_key(key):
+        if request.POST.get('reset'):
+            lists = dict(request.session.get(BOUGHT_KEY, {}))
+            lists.pop(key, None)
+            request.session[BOUGHT_KEY] = lists
+        else:
+            product_id = parse_int(request.POST.get('product'), 0)
+            if 0 < product_id <= MAX_DB_ID:
+                set_bought(request.session, key, product_id, request.POST.get('bought') == '1')
+    if request.headers.get('X-Requested-With') == 'fetch':
+        return JsonResponse({'ok': valid_list_key(key)})
+    return redirect(safe_next_url(request))
+
+
 def shopping_view(request):
     """Сторінка «Покупки»: список продуктів на весь раціон."""
     choices = read_choices(request.GET)
@@ -367,10 +432,16 @@ def shopping_view(request):
         context['error'] = str(error)
         return render(request, 'nutrition/shopping.html', context)
     totals = period_totals(plan_days)
+    rows = shopping_rows(plan_days)
+    key = list_key_for_query(context['query'])
+    bought_count, total_count = mark_bought(rows, bought_ids(request.session, key))
     context.update({
-        'rows': shopping_rows(plan_days),
+        'rows': rows,
         'days_total': len(plan_days),
         'cost': totals['cost'],
+        'list_key': key,
+        'bought_count': bought_count,
+        'total_count': total_count,
     })
     return render(request, 'nutrition/shopping.html', context)
 
@@ -411,11 +482,16 @@ def plan_detail_view(request, pk):
         parse_int(request.GET.get('day'), 0), parse_int(request.GET.get('meal'), 0), link,
     )
     rows = shopping_rows(plan_days)
+    key = list_key_for_plan(plan)
+    bought_count, total_count = mark_bought(rows, bought_ids(request.session, key))
     return render(request, 'nutrition/plan_detail.html', {
         'plan': plan,
         'view': view,
         'rows': rows,
         'cost': view['period']['totals']['cost'],
+        'list_key': key,
+        'bought_count': bought_count,
+        'total_count': total_count,
     })
 
 
