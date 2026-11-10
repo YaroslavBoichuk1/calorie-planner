@@ -1012,6 +1012,90 @@ class SilpoCartTests(TestCase):
         self.assertEqual(silpo_item_choices({'item_5': 'a', 'item_abc': 'b', 'item_²': 'c', 'other': 'd'}), {5: 'a'})
 
 
+class SilpoSubstitutionTests(TestCase):
+    """Оброблені товари й попередження про заміну через нестачу."""
+
+    def setUp(self):
+        """Куряче філе, яке купують на вагу."""
+        self.chicken = Product.objects.create(
+            name='філе', calories=120, proteins=22.5, fats=2.6, carbs=0, silpo_search='куряче філе',
+        )
+
+    def prices(self, items, choices=None, grams=300):
+        """Ціни для 300 г філе із заготовленими результатами пошуку."""
+        connection = FakeConnection(slots=[SLOT_ONE], products={'куряче філе': items})
+        return silpo.find_prices(connection, {self.chicken: grams}, choices)
+
+    def test_processed_goods_need_the_word_in_the_search(self):
+        self.assertFalse(silpo.name_matches('Огірок солоний', 'огірок'))
+        self.assertFalse(silpo.name_matches('Огірок ПП Діана-М Бочкові соління', 'огірок'))
+        self.assertFalse(silpo.name_matches('Банан «Премія» сушений', 'банан'))
+        self.assertFalse(silpo.name_matches('Капуста квашена', 'капуста'))
+        self.assertFalse(silpo.name_matches('Куряче філе копчене', 'куряче філе'))
+        self.assertFalse(silpo.name_matches('Квасоля консервована', 'квасоля'))
+        self.assertTrue(silpo.name_matches('Огірок солоний', 'огірок солоний'))
+        self.assertTrue(silpo.name_matches('Картопля біла для смаження та запікання', 'картопля'))
+        self.assertTrue(silpo.name_matches('Огірок', 'огірок'))
+
+    def test_no_warning_when_cheapest_is_available(self):
+        row = self.prices([silpo_item('Куряче філе', 189, '100г', weighted=True, step=0.5, slug='a')])['rows'][0]
+        self.assertIsNone(row['warning'])
+
+    def test_warning_when_cheapest_has_too_little(self):
+        prices = self.prices([
+            silpo_item('Куряче філе', 189, '100г', weighted=True, step=0.5, stock=0.3, slug='cheap'),
+            silpo_item('Куряче філе зі стегна', 282, '100г', weighted=True, step=0.5, slug='thigh'),
+        ])
+        row = prices['rows'][0]
+        self.assertEqual(row['offer']['id'], 'id-thigh')
+        self.assertEqual(row['warning'], 'Найдешевшого товару «Куряче філе» є лише 0.3 кг, а потрібно більше, тому вибрано інший.')
+        self.assertEqual(prices['warnings'], 1)
+
+    def test_warning_when_cheapest_is_out_of_stock(self):
+        row = self.prices([
+            silpo_item('Куряче філе', 189, '100г', weighted=True, step=0.5, available=False, slug='cheap'),
+            silpo_item('Куряче філе зі стегна', 282, '100г', weighted=True, step=0.5, slug='thigh'),
+        ])['rows'][0]
+        self.assertEqual(row['warning'], 'Найдешевшого товару «Куряче філе» зараз немає, тому вибрано інший.')
+
+    def test_warning_when_nothing_is_enough(self):
+        row = self.prices([silpo_item('Куряче філе', 189, '100г', weighted=True, step=0.5, stock=0.3, slug='cheap')])['rows'][0]
+        self.assertIsNone(row['offer'])
+        self.assertEqual(row['warning'], 'Найдешевшого товару «Куряче філе» є лише 0.3 кг, а потрібно більше.')
+
+    def test_person_choice_of_a_dearer_item_gives_no_warning(self):
+        items = [
+            silpo_item('Куряче філе', 189, '100г', weighted=True, step=0.5, slug='cheap'),
+            silpo_item('Куряче філе зі стегна', 282, '100г', weighted=True, step=0.5, slug='thigh'),
+        ]
+        self.assertIsNone(self.prices(items, {self.chicken.pk: 'id-thigh'})['rows'][0]['warning'])
+        self.assertIsNone(self.prices(items, {self.chicken.pk: silpo.SKIP})['rows'][0]['warning'])
+
+    def test_warning_when_chosen_item_ran_out(self):
+        items = [
+            silpo_item('Куряче філе', 189, '100г', weighted=True, step=0.5, slug='cheap'),
+            silpo_item('Куряче філе зі стегна', 282, '100г', weighted=True, step=0.5, stock=0.2, slug='thigh'),
+        ]
+        row = self.prices(items, {self.chicken.pk: 'id-thigh'})['rows'][0]
+        self.assertEqual(row['offer']['id'], 'id-cheap')
+        self.assertEqual(row['warning'], 'Вибраного раніше товару вже не вистачає, тому вибрано інший.')
+
+    def test_page_marks_rows_and_shows_summary(self):
+        session = self.client.session
+        silpo.save_tokens(session, TOKENS, 'client-1')
+        session.save()
+        recipe = Recipe.objects.create(name='Філе')
+        RecipeIngredient.objects.create(recipe=recipe, product=self.chicken, grams=150)
+        connection = FakeConnection(slots=[SLOT_ONE], products={'куряче філе': [
+            silpo_item('Куряче філе', 189, '100г', weighted=True, step=0.5, stock=0.3, slug='cheap'),
+            silpo_item('Куряче філе зі стегна', 282, '100г', weighted=True, step=0.5, slug='thigh'),
+        ]})
+        with patch('nutrition.views.silpo.McpConnection', return_value=connection):
+            response = self.client.get(reverse('silpo_prices'))
+        self.assertContains(response, 'class="silpo-warning"')
+        self.assertContains(response, 'позначених рядків: 1')
+
+
 class McpConnectionTests(SimpleTestCase):
     """Розмова з MCP-сервером."""
 

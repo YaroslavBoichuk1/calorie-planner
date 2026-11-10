@@ -228,6 +228,7 @@ legend.field-label { padding: 0; }
 .silpo-select { width: 100%; max-width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); font-family: inherit; font-size: 15px; font-weight: 600; color: var(--ink); }
 .silpo-slot .silpo-select { flex: 1 1 220px; width: auto; }
 .silpo-offer .silpo-select { margin-bottom: 6px; }
+.silpo-warning { margin-top: 6px; font-size: 13px; font-weight: 600; line-height: 1.4; color: #7A4410; }
 .total:has(.silpo-text) { flex-wrap: wrap; gap: 10px 20px; }
 .total:has(.silpo-text) > div:first-child { flex: 1 1 240px; min-width: 0; }
 

@@ -8,6 +8,10 @@
     <h1 class="plan-title">Ціни «Сільпо»</h1>
     <p class="plan-meta num">Для твого магазину, днів у раціоні: {{ days_count }}. Спочатку вибрано найдешевший товар за кілограм чи штуку, але його можна замінити. Ціни не зберігаються.</p>
 
+    {% if prices.warnings %}
+    <div class="message message-warning" role="status">Деяких товарів не вистачає, тому застосунок вибрав інші (позначених рядків: {{ prices.warnings }}). Перевір їх, перш ніж збирати кошик.</div>
+    {% endif %}
+
     <!-- Вибір товарів і часу: після зміни сторінка перераховується -->
     <form method="get" class="silpo-choices">
         {% for key, value in plan_params %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
@@ -39,10 +43,11 @@
                     {% if row.offer %}
                     <div class="plan-meta num">купити {{ row.offer.quantity }} · <a href="{{ row.offer.url }}" target="_blank" rel="noopener">сторінка товару</a></div>
                     {% endif %}
+                    {% if row.warning %}<div class="silpo-warning">{{ row.warning }}</div>{% endif %}
                 </div>
                 {% if row.offer %}<div class="card-cost-val num">{{ row.offer.cost|floatformat:2 }} грн</div>{% endif %}
                 {% else %}
-                <div class="silpo-offer plan-meta">Не знайдено в цьому магазині</div>
+                <div class="silpo-offer plan-meta">{% if row.warning %}<div class="silpo-warning">{{ row.warning }}</div>{% else %}Не знайдено в цьому магазині{% endif %}</div>
                 {% endif %}
             </li>
             {% empty %}

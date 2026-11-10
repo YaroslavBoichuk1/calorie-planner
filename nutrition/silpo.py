@@ -1,4 +1,4 @@
-"""Підключення до офіційного MCP-сервера «Сільпо»: вхід через OAuth і запити від імені людини.
+    """Підключення до офіційного MCP-сервера «Сільпо»: вхід через OAuth і запити від імені людини.
 
 Правила «Сільпо» (https://ai-factory.silpo.ua/docs/mcp):
 - діємо лише від імені людини, яка сама увійшла у свій акаунт;
@@ -62,6 +62,8 @@ VALIDATION_MESSAGES = {
     'order.cost.min': 'Сума товарів менша за мінімальне замовлення для доставки.',
 }
 UNKNOWN_VALIDATION_MESSAGE = '«Сільпо» просить перевірити кошик на своєму сайті'
+# Початки слів обробленої їжі: такий товар не годиться, якщо цього слова нема в самому пошуку
+PROCESSED_STEMS = ('солон', 'солін', 'маринов', 'квашен', 'консерв', 'копчен', 'сушен', 'стерилізов')
 # Коди, коли товар власного приготування можна доставити лише в певні години
 TIME_LIMITED_CODES = {'timeslot.cooked_food.limited', 'timeslot.own_cooking.limited'}
 
@@ -311,12 +313,21 @@ def parse_pack(display_ratio):
 
 
 def name_matches(name, query):
-    """Чи годиться назва товару під пошук: починається з першого слова пошуку й містить решту як окремі слова. Так «рис» не знайде «рисове борошно», а «яловичина» — корм для собак."""
+    """Чи годиться назва товару під пошук: починається з першого слова пошуку, містить решту як окремі слова
+    й не є обробленим (солоним, маринованим тощо), якщо пошук цього не просить.
+    Так «рис» не знайде «рисове борошно», «яловичина» — корм для собак, а «огірок» — солоний огірок."""
     words = re.findall(r'\w+', name.lower())
     query_words = query.lower().split()
     if not words or not query_words or words[0] != query_words[0]:
         return False
-    return all(word in words for word in query_words)
+    if not all(word in words for word in query_words):
+        return False
+    for stem in PROCESSED_STEMS:
+        in_name = any(word.startswith(stem) for word in words)
+        in_query = any(word.startswith(stem) for word in query_words)
+        if in_name and not in_query:
+            return False
+    return True
 
 
 def whole_units(needed, unit_size):
@@ -324,9 +335,10 @@ def whole_units(needed, unit_size):
     return math.ceil(round(needed / unit_size, 6))
 
 
-def make_offer(item, product, grams):
-    """Що й за скільки купити, якщо брати цей товар → словник пропозиції або None, якщо товар не годиться."""
-    if not item.get('available'):
+def make_offer(item, product, grams, check_stock=True):
+    """Що й за скільки купити, якщо брати цей товар → словник пропозиції або None, якщо товар не годиться.
+    check_stock=False — не зважати на наявність: так знаходимо товар, який був би найкращим, якби його вистачало."""
+    if check_stock and not item.get('available'):
         return None
 
     common = {
@@ -335,12 +347,15 @@ def make_offer(item, product, grams):
         'branch_id': item.get('branchId'),
         'name': item['name'],
         'url': PRODUCT_URL + quote(item['slug']),
+        'available': bool(item.get('available')),
+        'stock': item.get('stock', 0),
+        'unit': 'кг' if item.get('weighted') else 'шт',
     }
     if item.get('weighted'):
         if product.unit == 'pc' or not item.get('step'):
             return None
         kilograms = whole_units(grams / 1000, item['step']) * item['step']
-        if kilograms > item.get('stock', 0):
+        if check_stock and kilograms > item.get('stock', 0):
             return None
         return {
             **common,
@@ -365,7 +380,7 @@ def make_offer(item, product, grams):
             return None
         needed = grams
     packs = whole_units(needed, pack_size)
-    if packs > item.get('stock', 0):
+    if check_stock and packs > item.get('stock', 0):
         return None
     return {
         **common,
@@ -378,15 +393,30 @@ def make_offer(item, product, grams):
     }
 
 
-def offers_for(items, product, query, grams):
+def offers_for(items, product, query, grams, check_stock=True):
     """Усі товари з результатів пошуку, що годяться для продукту, від найдешевшого за кілограм чи штуку."""
     offers = []
     for item in items:
         if name_matches(item.get('name', ''), query):
-            offer = make_offer(item, product, grams)
+            offer = make_offer(item, product, grams, check_stock)
             if offer:
                 offers.append(offer)
     return sorted(offers, key=lambda offer: offer['unit_price'])
+
+
+def shortage_warning(best, offer, choice):
+    """Попередження, якщо вибрано не той товар, який мав би бути: найдешевшого чи вибраного людиною не вистачає. Інакше None."""
+    if choice == SKIP:
+        return None
+    if choice and (offer is None or offer['id'] != choice):
+        return 'Вибраного раніше товару вже не вистачає, тому вибрано інший.' if offer else 'Вибраного раніше товару вже не вистачає.'
+    if choice or best is None or (offer is not None and offer['id'] == best['id']):
+        return None
+    if not best['available'] or best['stock'] <= 0:
+        shortage = f"Найдешевшого товару «{best['name']}» зараз немає"
+    else:
+        shortage = f"Найдешевшого товару «{best['name']}» є лише {best['stock']:g} {best['unit']}, а потрібно більше"
+    return f'{shortage}, тому вибрано інший.' if offer else f'{shortage}.'
 
 
 def choose_offer(offers, choice):
@@ -498,6 +528,7 @@ def find_prices(connection, shopping, choices=None, requested_slot=''):
     for product, grams in needed.items():
         query = queries[product]
         offers = offers_for(found.get(query, []), product, query, grams)
+        everything = offers_for(found.get(query, []), product, query, grams, check_stock=False)
         choice = choices.get(product.pk)
         offer = choose_offer(offers, choice)
         shown = offers[:MAX_OFFERS]
@@ -510,6 +541,7 @@ def find_prices(connection, shopping, choices=None, requested_slot=''):
             'offers': shown,
             'offer': offer,
             'skipped': choice == SKIP,
+            'warning': shortage_warning(everything[0] if everything else None, offer, choice),
         })
 
     chosen = [row['offer'] for row in rows if row['offer']]
@@ -522,6 +554,7 @@ def find_prices(connection, shopping, choices=None, requested_slot=''):
         'slots': [{'start': item['start'], 'label': slot_label(item)} for item in context['slots']],
         'slot_start': slot['start'],
         'cart_count': len(cart_lines(context['cart'])),
+        'warnings': sum(1 for row in rows if row['warning']),
         'context': context,
     }
 
