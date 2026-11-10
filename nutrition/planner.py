@@ -1,4 +1,5 @@
 import itertools
+import random
 
 MIN_PROTEIN = 5   # г білка на 100 г, щоб продукт вважався джерелом білка
 MIN_FAT = 2       # г жиру на 100 г, щоб продукт вважався джерелом жиру
@@ -6,6 +7,7 @@ MIN_DAY_CALORIES = 0     # ккал на день
 MAX_DAY_CALORIES = 10000   # ккал на день: вище — майже напевно помилка вводу
 NO_PRODUCTS_MESSAGE = "Бракує продуктів для раціону. Додай їх в адмінці."
 NO_RECIPES_MESSAGE = "Бракує страв для раціону. Додай їх в адмінці."
+VARIANT_JITTER = 0.04      # «Скласти заново»: найбільший випадковий зсув оцінки страви (4 в. п. промаху БЖВ)
 VARIETY_PENALTY = 0.015    # скільки промаху БЖВ «коштує» кожне вживання страви за період: більше — різноманітніше, менше — точніше
 DAY_PERCENTAGE = {'Сніданок': 0.25, 'Обід': 0.40, 'Вечеря': 0.35}
 WEEK_DAYS = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота', 'Неділя']
@@ -241,7 +243,7 @@ def day_miss(day_recipes, shares, targets):
     return miss
 
 
-def choose_day_recipes(candidates, shares, targets, previous_day, times_used, dish_uses):
+def choose_day_recipes(candidates, shares, targets, previous_day, times_used, dish_uses, jitter=None):
     """Вибирає по страві на кожен прийом дня: перебирає всі поєднання й бере найкраще за правилами в rank."""
     def rank(day_recipes):
         """Оцінка поєднання: кортежі порівнюються зліва направо, тож перші правила важливіші, а менше — краще."""
@@ -252,7 +254,8 @@ def choose_day_recipes(candidates, shares, targets, previous_day, times_used, di
             repeats_today,
             repeats_from_yesterday,
             times_used.get(day_recipes, 0),
-            day_miss(day_recipes, shares, targets) + VARIETY_PENALTY * uses_in_period,
+            day_miss(day_recipes, shares, targets) + VARIETY_PENALTY * uses_in_period
+            + sum((jitter or {}).get(recipe, 0) for recipe in day_recipes),
         )
 
     return min(itertools.product(*candidates), key=rank)
@@ -289,7 +292,7 @@ def swap_meal(days, day_index, meal_index, recipe):
     return True
 
 
-def build_recipe_period(recipes, days_count, day_calories, protein_pct, fat_pct, carbs_pct):
+def build_recipe_period(recipes, days_count, day_calories, protein_pct, fat_pct, carbs_pct, variant=0):
     """Будує раціон зі страв на days_count днів → список днів {name, day}. Кидає ValueError, якщо ціль чи страви не годяться."""
     check_day_targets(day_calories, protein_pct, fat_pct, carbs_pct)
 
@@ -311,11 +314,17 @@ def build_recipe_period(recipes, days_count, day_calories, protein_pct, fat_pct,
 
     targets = {'protein': protein_pct, 'fat': fat_pct, 'carbs': carbs_pct}
     days = []
+    # «Скласти заново»: кожен варіант трохи по-своєму зсуває оцінки страв. Той самий номер дає те саме меню.
+    jitter = {}
+    if variant:
+        generator = random.Random(variant)
+        jitter = {recipe: generator.uniform(0, VARIANT_JITTER) for recipe in sorted(shares, key=lambda recipe: recipe.pk)}
+
     previous_day = ()
     times_used = {}    # скільки разів було кожне поєднання страв
     dish_uses = {}     # скільки разів була кожна страва
     for i in range(days_count):
-        day_recipes = choose_day_recipes(candidates, shares, targets, previous_day, times_used, dish_uses)
+        day_recipes = choose_day_recipes(candidates, shares, targets, previous_day, times_used, dish_uses, jitter)
         times_used[day_recipes] = times_used.get(day_recipes, 0) + 1
         for recipe in day_recipes:
             dish_uses[recipe] = dish_uses.get(recipe, 0) + 1

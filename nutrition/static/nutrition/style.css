@@ -129,6 +129,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dark-number { margin-top: 4px; font-size: 32px; font-weight: 800; letter-spacing: -0.03em; }
 .dark-note { margin: 0; font-size: 15px; line-height: 1.45; color: #E4E7E5; }
 
+.variant-note { margin: -8px 0 16px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.variant-note a { color: var(--protein); font-weight: 700; }
+
 /* === Вкладки днів === */
 .day-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 24px; }
 .day-tab {

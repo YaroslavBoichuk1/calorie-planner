@@ -457,6 +457,64 @@ class BoughtTests(RecipeDataMixin, TestCase):
         self.assertIn('data-bought-count>0<', self.client.get('/shopping/', {'period': 'week'}).content.decode())
 
 
+class VariantTests(RecipeDataMixin, TestCase):
+    """«Скласти заново»: інший варіант меню з тими самими цілями."""
+
+    def setUp(self):
+        """Шість страв у базі."""
+        self.make_recipes()
+
+    def week(self, variant):
+        """Меню тижня для варіанта → список назв страв по днях."""
+        recipes = Recipe.objects.prefetch_related('ingredients__product')
+        days = build_recipe_period(recipes, 7, 2000, 0.3, 0.3, 0.4, variant)
+        return days, [menu(day) for day in days]
+
+    def test_first_variant_is_the_usual_menu(self):
+        self.assertEqual(self.week(0)[1], [menu(day) for day in self.build()])
+
+    def test_variants_differ_but_each_is_stable(self):
+        first = self.week(0)[1]
+        self.assertTrue(any(self.week(variant)[1] != first for variant in range(1, 6)))
+        self.assertEqual(self.week(3)[1], self.week(3)[1])
+
+    def test_variant_keeps_the_rules(self):
+        days, names = self.week(4)
+        for index, day_names in enumerate(names):
+            self.assertEqual(len(set(day_names)), 3)
+            self.assertNotIn('Сніданкова', day_names[1:])
+            if index:
+                self.assertFalse(set(day_names) & set(names[index - 1]))
+            self.assertAlmostEqual(day_totals(days[index]['day'])['calories'], 2000)
+
+    def test_page_offers_next_variant_and_drops_swaps(self):
+        html = self.client.get('/', {'period': 'week', 'swaps': '0.1.1'}).content.decode()
+        self.assertIn('Скласти заново', html)
+        link = re.search(r'<a class="btn btn-dark" href="([^"]+)">\s*<svg', html).group(1).replace('&amp;', '&')
+        self.assertIn('variant=1', link)
+        self.assertNotIn('swaps=', link)
+        self.assertNotIn('Варіант меню', html)
+
+        html = self.client.get('/', {'period': 'week', 'variant': '2'}).content.decode()
+        self.assertIn('Варіант меню № 3', html)
+        self.assertIn('variant=3', html)
+
+    def test_variant_reaches_shopping_and_save(self):
+        html = self.client.get('/', {'period': 'week', 'variant': '4'}).content.decode()
+        self.assertIn('/shopping/?period=week&amp;variant=4', html)
+        self.client.post(reverse('plan_save'), {'query': 'period=week&variant=4', 'name': 'Варіант'})
+        plan = MealPlan.objects.get(name='Варіант')
+        saved = [name for day in range(7) for name in dict.fromkeys(
+            plan.items.filter(day_number=day).order_by('meal_number', 'id').values_list('recipe_name', flat=True))]
+        self.assertEqual(saved, [name for day in self.week(4)[1] for name in day])
+
+    def test_bad_variant_values(self):
+        from nutrition.views import read_choices
+        for raw, expected in [('abc', 0), ('-5', 0), ('²', 0), ('9' * 40, 999999), ('1e400', 0), ('7', 7)]:
+            with self.subTest(raw=raw):
+                self.assertEqual(read_choices({'variant': raw})['variant'], expected)
+                self.assertEqual(self.client.get('/', {'variant': raw}).status_code, 200)
+
 
 class NoPricesTests(RecipeDataMixin, TestCase):
     """Стандартний варіант: продукти без цін."""

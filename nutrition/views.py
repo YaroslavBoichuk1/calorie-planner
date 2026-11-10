@@ -36,8 +36,9 @@ def parse_days_count(raw_days):
     return min(max(parse_int(raw_days, DEFAULT_DAYS), 1), MAX_DAYS)
 
 
-PLAN_KEYS = ('period', 'days', 'calories', 'protein_pct', 'fat_pct', 'carbs_pct', 'swaps')   # параметри, що описують сам раціон
+PLAN_KEYS = ('period', 'days', 'calories', 'protein_pct', 'fat_pct', 'carbs_pct', 'variant', 'swaps')   # параметри, що описують сам раціон
 MAX_SWAPS = 100               # більше замін в адресі не читаємо
+MAX_VARIANT = 999999          # номер варіанта меню («Скласти заново»)
 BOUGHT_KEY = 'bought'         # у сесії: що вже куплено {ключ списку: [id продуктів]}
 MAX_BOUGHT_LISTS = 10         # скільки списків пам'ятаємо; найстаріші забуваємо
 MAX_LIST_KEY = 600            # довший ключ списку не приймаємо
@@ -244,6 +245,7 @@ def read_choices(data):
         'protein_pct': parse_int(data.get('protein_pct'), 30),
         'fat_pct': parse_int(data.get('fat_pct'), 30),
         'carbs_pct': parse_int(data.get('carbs_pct'), 40),
+        'variant': min(max(parse_int(data.get('variant'), 0), 0), MAX_VARIANT),
         'swaps': parse_swaps(data.get('swaps')),
     }
 
@@ -259,6 +261,7 @@ def build_plan_days(choices):
         choices['protein_pct'] / 100,
         choices['fat_pct'] / 100,
         choices['carbs_pct'] / 100,
+        choices.get('variant', 0),
     )
     by_id = {recipe.pk: recipe for recipe in recipes}
     for (day_index, meal_index), recipe_id in choices.get('swaps', {}).items():
@@ -303,6 +306,9 @@ def planner_view(request):
             for key, label in PERIOD_LABELS.items()
         ],
         'query': base,
+        # «Скласти заново»: наступний варіант меню; заміни страв скидаються, бо меню вже інше
+        'remake_url': f"?{plan_query(request.GET, variant=choices['variant'] % MAX_VARIANT + 1, swaps='')}",
+        'first_variant_url': f"?{plan_query(request.GET, variant='', swaps='')}",
         'show_shopping': True,
         'show_save': True,
     }
