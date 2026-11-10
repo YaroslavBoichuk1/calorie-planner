@@ -1674,9 +1674,9 @@ class OwnershipTests(RecipeDataMixin, TestCase):
         return self.client.post(reverse('goal_save'), data)
 
     def test_goal_form_saves_for_account_and_not_for_guest(self):
-        self.assertIn('method="get"', self.client.get(reverse('goal')).content.decode())
+        self.assertIn('<form method="get" action="/" class="goal-form">', self.client.get('/').content.decode())
         self.client.force_login(self.owner)
-        self.assertIn('action="/goal/save/"', self.client.get(reverse('goal')).content.decode())
+        self.assertIn('<form method="post" action="/goal/save/" class="goal-form">', self.client.get('/').content.decode())
         response = self.goal()
         self.assertRedirects(response, '/?period=week&days=3&calories=1800&protein_pct=35&fat_pct=25&carbs_pct=40', fetch_redirect_response=False)
         profile = Profile.objects.get(user=self.owner)
@@ -1685,7 +1685,7 @@ class OwnershipTests(RecipeDataMixin, TestCase):
     def test_saved_goal_opens_when_address_has_none(self):
         self.client.force_login(self.owner)
         self.goal()
-        for path in ('/', '/shopping/', '/goal/'):
+        for path in ('/', '/shopping/'):
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 302)
@@ -1753,3 +1753,64 @@ class PlanDeleteTests(RecipeDataMixin, TestCase):
         self.assertEqual(self.client.get(reverse('plan_delete', args=[self.plan.pk])).status_code, 405)
         self.assertEqual(self.client.post(f'/plans/{2 ** 64}/delete/').status_code, 404)
         self.assertTrue(MealPlan.objects.exists())
+
+
+
+class GoalPanelTests(RecipeDataMixin, TestCase):
+    """Ціль на сторінці «Раціон» замість окремої вкладки."""
+
+    def setUp(self):
+        self.make_recipes()
+
+    def test_goal_tab_is_gone_and_old_links_lead_to_planner(self):
+        html = self.client.get('/', {'period': 'week'}).content.decode()
+        self.assertNotIn('<span>Ціль</span>', html)
+        response = self.client.get('/goal/', {'period': 'week', 'calories': '1800'})
+        self.assertRedirects(response, '/?period=week&calories=1800', fetch_redirect_response=False)
+
+    def test_panel_shows_goal_and_is_closed_when_plan_is_fine(self):
+        html = self.client.get('/', {'period': 'week', 'calories': '1800', 'protein_pct': '35', 'fat_pct': '25', 'carbs_pct': '40'}).content.decode()
+        self.assertIn('<details class="goal-panel" id="goal">', html)
+        self.assertIn('<span>1800 ккал ·</span> <span>Б 35% · Ж 25% · В 40%</span>', html)
+        self.assertIn('name="period" value="week"', html)
+        self.assertNotIn('name="days"', html)                     # кількість днів — лише для «Свій»
+        self.assertIn('≈ 158 г на день', html)                   # 1800 · 35% / 4 ккал = 157.5 г білка
+
+    def test_panel_is_open_when_goal_is_wrong(self):
+        html = self.client.get('/', {'protein_pct': '50', 'fat_pct': '30', 'carbs_pct': '40'}).content.decode()
+        self.assertIn('<details class="goal-panel" id="goal" open>', html)
+        self.assertIn('Разом 120% — має бути 100%', html)
+
+    def test_custom_period_has_days_field(self):
+        html = self.client.get('/', {'period': 'custom', 'days': '5'}).content.decode()
+        self.assertIn('name="days" min="1" max="31" value="5"', html)
+
+    def test_enter_key_does_not_pick_a_preset(self):
+        html = self.client.get('/').content.decode()
+        form = html[html.index('class="goal-form"'):]
+        self.assertLess(form.index('class="default-submit"'), form.index('name="preset"'))
+
+    def test_guest_preset_button_sets_proportions(self):
+        response = self.client.get('/', {'period': 'week', 'calories': '1800', 'variant': '3', 'preset': '1'})
+        self.assertRedirects(response, '/?period=week&calories=1800&protein_pct=40&fat_pct=30&carbs_pct=30&variant=3', fetch_redirect_response=False)
+        html = self.client.get(response['Location']).content.decode()
+        self.assertIn('aria-pressed="true">Більше білка<', html)
+
+    def test_bad_preset_is_ignored(self):
+        for bad in ('9', '-1', 'x', '²', ''):
+            with self.subTest(preset=bad):
+                response = self.client.get('/', {'calories': '1800', 'protein_pct': '30', 'fat_pct': '30', 'carbs_pct': '40', 'preset': bad})
+                self.assertEqual(response.status_code, 302)
+                self.assertIn('protein_pct=30', response['Location'])
+                self.assertNotIn('preset', response['Location'])
+
+    def test_account_preset_button_saves_goal(self):
+        self.client.force_login(make_account())
+        data = {'period': 'day', 'calories': '2200', 'protein_pct': '30', 'fat_pct': '30', 'carbs_pct': '40', 'preset': '2'}
+        response = self.client.post(reverse('goal_save'), data)
+        self.assertRedirects(response, '/?period=day&calories=2200&protein_pct=35&fat_pct=40&carbs_pct=25', fetch_redirect_response=False)
+        self.assertEqual(Profile.objects.get().fat_pct, 40)
+
+    def test_shopping_error_links_to_goal_panel(self):
+        html = self.client.get('/shopping/', {'protein_pct': '90'}).content.decode()
+        self.assertIn('href="/?protein_pct=90#goal"', html)

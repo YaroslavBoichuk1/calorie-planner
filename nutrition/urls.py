@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 from . import account_views, views
 
 urlpatterns = [
@@ -7,7 +8,8 @@ urlpatterns = [
     path('accounts/login/', account_views.login_view, name='login'),
     path('accounts/logout/', account_views.logout_view, name='logout'),
     path('', views.planner_view, name='planner'),
-    path('goal/', views.goal_view, name='goal'),
+    # Окремої сторінки «Ціль» більше нема: старі посилання ведуть на «Раціон» з тими самими параметрами
+    path('goal/', RedirectView.as_view(pattern_name='planner', query_string=True)),
     path('goal/save/', views.goal_save_view, name='goal_save'),
     path('shopping/', views.shopping_view, name='shopping'),
     path('shopping/check/', views.shopping_check_view, name='shopping_check'),

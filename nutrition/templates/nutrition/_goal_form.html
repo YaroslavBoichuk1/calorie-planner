@@ -1,0 +1,51 @@
+<!-- Ціль: калорії й пропорція БЖВ. Згорнута до одного рядка; відкрита, якщо з ціллю щось не так -->
+<details class="goal-panel" id="goal"{% if error %} open{% endif %}>
+    <summary class="goal-summary">
+        <span class="goal-summary-label">Ціль</span>
+        <span class="goal-summary-value num"><span>{{ target_calories }} ккал ·</span> <span>Б {{ protein_pct }}% · Ж {{ fat_pct }}% · В {{ carbs_pct }}%</span></span>
+        <span class="goal-summary-action">Змінити</span>
+    </summary>
+
+    {# Хто увійшов — ціль зберігається в профіль (POST); гість просто відкриває раціон з цими параметрами (GET) #}
+    {% if user.is_authenticated %}<form method="post" action="{% url 'goal_save' %}" class="goal-form">{% csrf_token %}
+    {% else %}<form method="get" action="{% url 'planner' %}" class="goal-form">{% endif %}
+        {# Enter у полі натискає першу кнопку форми — нехай це буде звичайне «скласти», а не готова пропорція #}
+        <button type="submit" class="default-submit" tabindex="-1" aria-hidden="true">Скласти раціон</button>
+        <input type="hidden" name="period" value="{{ period }}">
+
+        <div class="goal-fields">
+            <label class="goal-field">
+                <span class="field-label">Калорії на день</span>
+                <input class="field-input num" type="number" name="calories" min="{{ min_calories }}" max="{{ max_calories }}" step="50" value="{{ target_calories }}" data-goal-calories>
+            </label>
+            {% if period == 'custom' %}
+            <label class="goal-field">
+                <span class="field-label">Днів у раціоні (1–{{ max_days }})</span>
+                <input class="field-input num" type="number" name="days" min="1" max="{{ max_days }}" value="{{ days_count }}">
+            </label>
+            {% endif %}
+        </div>
+
+        <div class="goal-field">
+            <span class="field-label" id="presets-label">Пропорція БЖВ</span>
+            <div class="presets" role="group" aria-labelledby="presets-label">
+                {% for preset in presets %}
+                <button type="submit" name="preset" value="{{ forloop.counter0 }}" class="preset{% if preset.active %} is-active{% endif %}" aria-pressed="{% if preset.active %}true{% else %}false{% endif %}">{{ preset.name }}</button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="macro-inputs">
+            {% for m in macros %}
+            <label class="macro-input">
+                <span class="macro-name"><span class="dot dot-{{ m.key }}"></span>{{ m.name }}</span>
+                <span class="macro-input-box"><input class="num" type="number" name="{{ m.key }}_pct" min="0" max="100" value="{{ m.pct }}" data-kcal="{{ m.kcal }}"><span>%</span></span>
+                <span class="macro-grams num" data-grams>≈ {{ m.grams|floatformat:0 }} г на день</span>
+            </label>
+            {% endfor %}
+        </div>
+        <p class="goal-sum num{% if pct_sum != 100 %} is-wrong{% endif %}" data-goal-sum>Разом {{ pct_sum }}%{% if pct_sum != 100 %} — має бути 100%{% endif %}</p>
+
+        <button type="submit" class="btn btn-accent goal-submit">{% if user.is_authenticated %}Зберегти ціль і скласти раціон{% else %}Скласти раціон{% endif %}</button>
+    </form>
+</details>

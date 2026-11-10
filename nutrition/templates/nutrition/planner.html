@@ -1,4 +1,5 @@
 {% extends 'nutrition/base.html' %}
+{% load static %}
 
 {% block content %}
 <header class="page-head">
@@ -12,7 +13,6 @@
             <a class="segment{% if p.active %} is-active{% endif %}" href="{{ p.url }}"{% if p.active %} aria-current="true"{% endif %}>{{ p.label }}</a>
             {% endfor %}
         </nav>
-        <a class="chip num" href="{% url 'goal' %}?{{ query }}">{{ target_calories }} ккал · Б{{ protein_pct }} Ж{{ fat_pct }} В{{ carbs_pct }}</a>
         {% if not error %}
         <a class="btn btn-dark" href="{{ remake_url }}">
             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 9a6 6 0 1 1-1.8-4.3M15 3v3.5h-3.5"></path></svg>
@@ -22,14 +22,18 @@
     </div>
 </header>
 
+{% include 'nutrition/_goal_form.html' %}
+
 {% if error %}
 <div class="error" role="alert">
     <div class="error-title">Не вдалося скласти раціон</div>
     <div class="error-text">{{ error }}</div>
-    <a class="btn btn-dark btn-small" href="{% url 'goal' %}?{{ query }}">Змінити ціль</a>
+    <div class="error-text">Виправ ціль у панелі вище.</div>
 </div>
 {% else %}
 {% if variant %}<p class="variant-note num">Варіант меню № {{ variant|add:1 }} · <a href="{{ first_variant_url }}">повернути перший</a></p>{% endif %}
 {% include 'nutrition/_plan_view.html' %}
 {% endif %}
 {% endblock %}
+
+{% block scripts %}<script src="{% static 'nutrition/goal.js' %}" defer></script>{% endblock %}

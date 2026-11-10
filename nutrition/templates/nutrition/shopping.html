@@ -16,7 +16,7 @@
 <div class="error" role="alert">
     <div class="error-title">Не вдалося скласти раціон</div>
     <div class="error-text">{{ error }}</div>
-    <a class="btn btn-dark btn-small" href="{% url 'goal' %}?{{ query }}">Змінити ціль</a>
+    <a class="btn btn-dark btn-small" href="{% url 'planner' %}?{{ query }}#goal">Змінити ціль</a>
 </div>
 {% else %}
 <div class="plan-grid">

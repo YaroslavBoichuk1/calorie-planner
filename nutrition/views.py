@@ -297,6 +297,32 @@ def targets_of(choices):
     return choices['protein_pct'], choices['fat_pct'], choices['carbs_pct']
 
 
+def apply_preset(data):
+    """Натиснули готову пропорцію (кнопка preset=номер) → копія даних форми з її відсотками БЖВ."""
+    data = data.copy()
+    index = parse_int(data.pop('preset', [''])[-1], -1)
+    if 0 <= index < len(PRESETS):
+        _, data['protein_pct'], data['fat_pct'], data['carbs_pct'] = PRESETS[index]
+    return data
+
+
+def goal_context(choices):
+    """Дані для панелі «Ціль» на сторінці раціону: готові пропорції, поля БЖВ із грамами, сума відсотків."""
+    current = (choices['protein_pct'], choices['fat_pct'], choices['carbs_pct'])
+    return {
+        'presets': [{'name': name, 'active': current == (protein, fat, carbs)} for name, protein, fat, carbs in PRESETS],
+        'macros': [
+            {'key': key, 'name': name, 'pct': choices[f'{key}_pct'], 'kcal': kcal_per_gram,
+             'grams': choices['target_calories'] * choices[f'{key}_pct'] / 100 / kcal_per_gram}
+            for key, name, kcal_per_gram in MACROS
+        ],
+        'pct_sum': sum(current),
+        'max_days': MAX_DAYS,
+        'min_calories': MIN_DAY_CALORIES,
+        'max_calories': MAX_DAY_CALORIES,
+    }
+
+
 def saved_goal_redirect(request):
     """Людина увійшла, має збережену ціль і відкрила сторінку без параметрів раціону → та сама сторінка з її ціллю.
 
@@ -316,8 +342,9 @@ def saved_goal_redirect(request):
 @require_POST
 def goal_save_view(request):
     """Зберігає ціль у профіль і відкриває раціон з нею. Ціль, з якої раціон не складається, не зберігаємо."""
-    choices = read_choices(request.POST)
-    query = plan_query(request.POST)
+    data = apply_preset(request.POST)
+    choices = read_choices(data)
+    query = plan_query(data)
     try:
         build_plan_days(choices)
     except ValueError:
@@ -334,10 +361,13 @@ def planner_view(request):
     """Головна сторінка «Раціон»: будує раціон за параметрами з адреси й показує вибраний день і страву."""
     if goal_redirect := saved_goal_redirect(request):
         return goal_redirect
+    if 'preset' in request.GET:          # гість натиснув готову пропорцію → та сама адреса з її відсотками
+        return redirect(f"{request.path}?{plan_query(apply_preset(request.GET))}")
     choices = read_choices(request.GET)
     base = plan_query(request.GET)
     context = {
         **choices,
+        **goal_context(choices),
         'period_label': PERIOD_LABELS[choices['period']],
         'period_links': [
             {'label': label, 'url': f"?{plan_query(request.GET, period=key)}", 'active': key == choices['period']}
@@ -375,35 +405,6 @@ def planner_view(request):
             meal['reset_url'] = f"?{plan_query(request.GET, swaps=format_swaps(rest), day=slot[0], meal=slot[1])}"
     context['view'] = view
     return render(request, 'nutrition/planner.html', context)
-
-
-def goal_view(request):
-    """Сторінка «Ціль»: період, калорії й пропорція БЖВ. Кнопка відкриває раціон із цими параметрами."""
-    if goal_redirect := saved_goal_redirect(request):
-        return goal_redirect
-    choices = read_choices(request.GET)
-    presets = [
-        {
-            'name': name,
-            'url': f"?{plan_query(request.GET, protein_pct=protein, fat_pct=fat, carbs_pct=carbs)}",
-            'active': (choices['protein_pct'], choices['fat_pct'], choices['carbs_pct']) == (protein, fat, carbs),
-        }
-        for name, protein, fat, carbs in PRESETS
-    ]
-    macros = [
-        {'key': key, 'name': name, 'pct': choices[f'{key}_pct'],
-         'grams': choices['target_calories'] * choices[f'{key}_pct'] / 100 / kcal_per_gram}
-        for key, name, kcal_per_gram in MACROS
-    ]
-    return render(request, 'nutrition/goal.html', {
-        **choices,
-        'presets': presets,
-        'macros': macros,
-        'pct_sum': choices['protein_pct'] + choices['fat_pct'] + choices['carbs_pct'],
-        'max_days': MAX_DAYS,
-        'min_calories': MIN_DAY_CALORIES,
-        'max_calories': MAX_DAY_CALORIES,
-    })
 
 
 def list_key_for_query(query):
