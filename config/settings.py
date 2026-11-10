@@ -121,6 +121,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Акаунти: куди відправляти тих, хто не увійшов, коли сторінка потребує входу
+LOGIN_URL = 'login'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 

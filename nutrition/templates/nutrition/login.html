@@ -1,0 +1,24 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}Вхід{% endblock %}
+
+{% block content %}
+<div class="auth">
+    <header class="page-head">
+        <div>
+            <div class="eyebrow">Щоб зберігати раціони й бачити їх з будь-якого пристрою</div>
+            <h1 class="page-title">Вхід</h1>
+        </div>
+    </header>
+    <form method="post" action="{% url 'login' %}" class="panel auth-form" novalidate>
+        {% csrf_token %}
+        {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+        {% if blocked %}<p class="form-error" role="alert">{{ blocked }}</p>{% endif %}
+        {% for error in form.non_field_errors %}<p class="form-error" role="alert">{{ error }}</p>{% endfor %}
+        {% include 'nutrition/_field.html' with field=form.email %}
+        {% include 'nutrition/_field.html' with field=form.password %}
+        <button type="submit" class="btn btn-accent btn-wide">Увійти</button>
+    </form>
+    <p class="auth-switch">Ще нема акаунта? <a href="{% url 'register' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Зареєструватися</a></p>
+</div>
+{% endblock %}

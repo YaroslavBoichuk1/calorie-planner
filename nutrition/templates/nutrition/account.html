@@ -1,0 +1,24 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}Профіль{% endblock %}
+
+{% block content %}
+<div class="auth">
+    <header class="page-head">
+        <div>
+            <div class="eyebrow num">Акаунт з {{ user.date_joined|date:"d.m.Y" }}</div>
+            <h1 class="page-title">Профіль</h1>
+        </div>
+    </header>
+    <section class="panel">
+        <div class="auth-field">
+            <div class="field-label">Пошта</div>
+            <div class="account-email">{{ user.email|default:user.username }}</div>
+        </div>
+        <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-ghost btn-wide">Вийти</button>
+        </form>
+    </section>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}Реєстрація{% endblock %}
+
+{% block content %}
+<div class="auth">
+    <header class="page-head">
+        <div>
+            <div class="eyebrow">Безкоштовно, потрібні лише пошта й пароль</div>
+            <h1 class="page-title">Реєстрація</h1>
+        </div>
+    </header>
+    <form method="post" action="{% url 'register' %}" class="panel auth-form" novalidate>
+        {% csrf_token %}
+        {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+        {% if blocked %}<p class="form-error" role="alert">{{ blocked }}</p>{% endif %}
+        {% for error in form.non_field_errors %}<p class="form-error" role="alert">{{ error }}</p>{% endfor %}
+        {% include 'nutrition/_field.html' with field=form.email %}
+        {% include 'nutrition/_field.html' with field=form.password1 hint=password_hint %}
+        {% include 'nutrition/_field.html' with field=form.password2 %}
+        <button type="submit" class="btn btn-accent btn-wide">Створити акаунт</button>
+    </form>
+    <p class="auth-switch">Уже є акаунт? <a href="{% url 'login' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Увійти</a></p>
+</div>
+{% endblock %}

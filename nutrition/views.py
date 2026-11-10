@@ -502,8 +502,8 @@ def plan_detail_view(request, pk):
 
 
 def safe_next_url(request):
-    """Адреса повернення з форми: лише всередині нашого сайту, інакше — головна сторінка."""
-    next_url = request.POST.get('next', '')
+    """Адреса повернення (поле next у формі або в адресі): лише всередині нашого сайту, інакше — головна сторінка."""
+    next_url = request.POST.get('next') or request.GET.get('next', '')
     if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
         return next_url
     return reverse('planner')

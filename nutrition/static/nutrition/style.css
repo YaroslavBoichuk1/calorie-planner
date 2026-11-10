@@ -241,6 +241,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .field-big { min-height: 72px; font-size: 32px; font-weight: 800; text-align: center; letter-spacing: -0.02em; }
 
+/* === Вхід, реєстрація, профіль === */
+.auth { max-width: 480px; }
+.auth-form { gap: 20px; }
+.auth-field { display: flex; flex-direction: column; gap: 8px; }
+.field-hint { margin: 0; font-size: 13px; color: var(--muted-strong); }
+.field-error { margin: 0; font-size: 14px; font-weight: 600; color: #C2410C; }
+.field-input[aria-invalid="true"] { box-shadow: inset 0 0 0 2px #C2410C; }
+.form-error { margin: 0; padding: 12px 16px; border-radius: 16px; background: #FFF1EC; color: #9A3412; font-size: 14px; font-weight: 600; }
+.auth-switch { margin: 16px 0 0; font-size: 15px; color: var(--muted-strong); }
+.auth-switch a { color: var(--protein); font-weight: 700; }
+.account-email { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+
 /* === Сторінка «Ціль» === */
 .goal { max-width: 640px; display: flex; flex-direction: column; gap: 16px; }
 .goal-section { gap: 14px; }
@@ -362,7 +374,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     .content { padding: 20px 16px 112px; }
     .page-title, .plan-title { font-size: 34px; }
     .bottom-nav {
-        display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+        display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px;
         position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 10; height: 64px; padding: 6px;
         border-radius: 999px; background: var(--dark); box-shadow: 0 12px 32px rgba(17, 20, 18, 0.25);
     }
@@ -394,6 +406,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     .meal-dish { grid-area: dish; font-size: 17px; }
     .meal-macros { grid-area: macros; justify-content: flex-start; }
     .silpo-need { flex-basis: 100%; }
+}
+
+/* Дуже вузький телефон: п'ять пунктів меню мусять уміститись */
+@media (max-width: 380px) {
+    .bottom-nav { left: 8px; right: 8px; padding: 4px; }
+    .bottom-nav .nav-link { font-size: 10.5px; letter-spacing: -0.01em; }
 }
 
 @media (prefers-reduced-motion: reduce) {

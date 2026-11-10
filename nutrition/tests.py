@@ -5,10 +5,11 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
-from . import silpo
+from . import login_limits, silpo
 from .models import MealPlan, Product, Recipe, RecipeIngredient, SilpoClient
 from .planner import (
     DAY_PERCENTAGE, NO_RECIPES_MESSAGE, build_recipe_period, day_totals, meal_totals, period_totals,
@@ -1367,3 +1368,173 @@ class McpConnectionTests(SimpleTestCase):
                 connection = self.connect(fake_response({'jsonrpc': '2.0', 'id': 2, 'result': result}))
                 with self.assertRaisesMessage(silpo.SilpoError, silpo.UNAVAILABLE_MESSAGE):
                     connection.call_tool('silpo_get_my_shopping_cart')
+
+
+class AccountTests(TestCase):
+    """Етап 13.1: реєстрація, вхід, вихід, захист від підбору пароля."""
+    PASSWORD = 'Smachnyi-borshch-42'
+
+    def setUp(self):
+        cache.clear()   # лічильники спроб живуть у кеші, а він спільний для всіх тестів
+
+    def register(self, email='Olena@Example.com ', password=None, password2=None, **extra):
+        password = password or self.PASSWORD
+        data = {'email': email, 'password1': password, 'password2': password2 or password, **extra}
+        return self.client.post(reverse('register'), data)
+
+    def login(self, email='olena@example.com', password=None, **extra):
+        return self.client.post(reverse('login'), {'email': email, 'password': password or self.PASSWORD, **extra})
+
+    def make_user(self, email='olena@example.com'):
+        return get_user_model().objects.create_user(username=email, email=email, password=self.PASSWORD)
+
+    def test_register_creates_user_and_logs_in(self):
+        response = self.register()
+        self.assertRedirects(response, reverse('planner'), fetch_redirect_response=False)
+        user = get_user_model().objects.get()
+        self.assertEqual((user.username, user.email), ('olena@example.com', 'olena@example.com'))
+        self.assertNotEqual(user.password, self.PASSWORD)            # пароль лежить лише як хеш
+        self.assertTrue(user.check_password(self.PASSWORD))
+        self.assertEqual(int(self.client.session['_auth_user_id']), user.pk)
+
+    def test_register_rejects_bad_input(self):
+        self.make_user()
+        cases = [
+            ({'email': 'OLENA@example.com'}, 'Акаунт із цією поштою вже є'),
+            ({'email': 'not-an-email'}, 'Це не схоже на адресу пошти'),
+            ({'email': ''}, 'Вкажи пошту'),
+            ({'email': 'a' * 140 + '@example.com'}, 'Пошта задовга'),
+            ({'email': 'new@example.com', 'password2': 'other-password-1'}, 'Паролі не збігаються'),
+            ({'email': 'new@example.com', 'password': '12345678'}, 'Пароль'),     # надто простий і лише цифри
+            ({'email': 'new@example.com', 'password': 'short'}, 'Пароль'),
+        ]
+        for data, message in cases:
+            with self.subTest(data=data):
+                response = self.register(**data)
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, message)
+        self.assertEqual(get_user_model().objects.count(), 1)
+
+    def test_weak_password_message_is_ukrainian(self):
+        html = self.register(email='new@example.com', password='12345678').content.decode()
+        self.assertNotIn('This password', html)
+
+    def test_register_keeps_session_data(self):
+        session = self.client.session
+        session['bought'] = {'q:period=week': [1, 2]}
+        session.save()
+        self.register()
+        self.assertEqual(self.client.session['bought'], {'q:period=week': [1, 2]})
+
+    def test_login_with_any_letter_case(self):
+        user = self.make_user()
+        response = self.login(email='  Olena@EXAMPLE.com')
+        self.assertRedirects(response, reverse('planner'), fetch_redirect_response=False)
+        self.assertEqual(int(self.client.session['_auth_user_id']), user.pk)
+
+    def test_wrong_password_and_unknown_email_look_the_same(self):
+        self.make_user()
+        wrong = self.login(password='wrong-password-1').content.decode()
+        unknown = self.login(email='nobody@example.com').content.decode()
+        for html in (wrong, unknown):
+            self.assertIn('Неправильна пошта або пароль', html)
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_next_url_is_followed_only_inside_the_site(self):
+        self.make_user()
+        response = self.login(next='/shopping/?period=week')
+        self.assertRedirects(response, '/shopping/?period=week', fetch_redirect_response=False)
+        self.client.post(reverse('logout'))
+        for bad in ['https://evil.example/', '//evil.example/', 'javascript:alert(1)']:
+            with self.subTest(next=bad):
+                response = self.login(next=bad)
+                self.assertRedirects(response, reverse('planner'), fetch_redirect_response=False)
+                self.client.post(reverse('logout'))
+
+    def test_login_page_keeps_next_from_address(self):
+        html = self.client.get(reverse('login'), {'next': '/plans/'}).content.decode()
+        self.assertIn('name="next" value="/plans/"', html)
+        self.assertIn(f'{reverse("register")}?next=/plans/', html)
+        html = self.client.get(reverse('login'), {'next': 'https://evil.example/'}).content.decode()
+        form = html[html.index('action="/accounts/login/"'):]
+        self.assertNotIn('evil', form)          # ні в прихованому полі, ні в посиланні на реєстрацію
+
+    def test_lockout_after_too_many_failures(self):
+        self.make_user()
+        for _ in range(login_limits.EMAIL_FAILURE_LIMIT):
+            self.login(password='wrong-password-1')
+        response = self.login()     # навіть правильний пароль зараз не пускає
+        self.assertContains(response, 'Забагато невдалих спроб')
+        self.assertNotIn('_auth_user_id', self.client.session)
+        self.make_user('other@example.com')
+        self.assertEqual(self.login(email='other@example.com').status_code, 302)   # інша пошта не заблокована
+
+    def test_successful_login_resets_failures(self):
+        self.make_user()
+        for _ in range(login_limits.EMAIL_FAILURE_LIMIT - 1):
+            self.login(password='wrong-password-1')
+        self.assertEqual(self.login().status_code, 302)
+        self.client.post(reverse('logout'))
+        for _ in range(login_limits.EMAIL_FAILURE_LIMIT - 1):
+            self.login(password='wrong-password-1')
+        self.assertEqual(self.login().status_code, 302)
+
+    def test_lockout_by_address(self):
+        self.make_user()
+        for number in range(login_limits.IP_FAILURE_LIMIT):
+            self.login(email=f'guess{number}@example.com')
+        self.assertContains(self.login(), 'Забагато невдалих спроб')
+
+    def test_empty_password_is_not_counted(self):
+        self.make_user()
+        for _ in range(login_limits.EMAIL_FAILURE_LIMIT + 2):
+            self.client.post(reverse('login'), {'email': 'olena@example.com', 'password': ''})
+        self.assertEqual(self.login().status_code, 302)
+
+    def test_empty_forms_show_errors(self):
+        for name, message in [('login', 'Вкажи пошту'), ('register', 'Вкажи пошту')]:
+            with self.subTest(page=name):
+                self.assertContains(self.client.post(reverse(name), {}), message)
+
+    def test_registration_limit_by_address(self):
+        for number in range(login_limits.REGISTER_LIMIT):
+            self.register(email=f'user{number}@example.com')
+            self.client.post(reverse('logout'))
+        response = self.register(email='one-more@example.com')
+        self.assertContains(response, 'Забагато нових акаунтів')
+        self.assertEqual(get_user_model().objects.count(), login_limits.REGISTER_LIMIT)
+
+    def test_logout_needs_post_and_clears_silpo(self):
+        self.make_user()
+        self.login()
+        session = self.client.session
+        session[silpo.TOKENS_KEY] = dict(TOKENS)
+        session.save()
+        self.assertEqual(self.client.get(reverse('logout')).status_code, 405)
+        self.assertRedirects(self.client.post(reverse('logout')), reverse('planner'), fetch_redirect_response=False)
+        self.assertNotIn('_auth_user_id', self.client.session)
+        self.assertNotIn(silpo.TOKENS_KEY, self.client.session)
+
+    def test_account_page_needs_login(self):
+        response = self.client.get(reverse('account'))
+        self.assertRedirects(response, f'{reverse("login")}?next={reverse("account")}', fetch_redirect_response=False)
+        self.make_user()
+        self.login()
+        self.assertContains(self.client.get(reverse('account')), 'olena@example.com')
+
+    def test_navigation_shows_login_or_profile(self):
+        html = self.client.get('/', {'period': 'week'}).content.decode()
+        self.assertIn(f'{reverse("login")}?next=/%3Fperiod%3Dweek', html)
+        self.assertNotIn('Профіль', html)
+        self.make_user()
+        self.login()
+        html = self.client.get('/').content.decode()
+        self.assertIn('Профіль', html)
+        self.assertNotIn('>Увійти<', html)
+
+    def test_logged_in_user_skips_login_and_register(self):
+        self.make_user()
+        self.login()
+        for name in ('login', 'register'):
+            with self.subTest(page=name):
+                self.assertRedirects(self.client.get(reverse(name)), reverse('planner'), fetch_redirect_response=False)
