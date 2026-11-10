@@ -1,3 +1,4 @@
+import re
 import json
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -301,6 +302,81 @@ class RecipeEngineTests(RecipeDataMixin, TestCase):
         Recipe.objects.update(for_dinner=False)
         with self.assertRaisesMessage(ValueError, 'Немає страви на прийом «Вечеря»'):
             self.build()
+
+
+class SwapTests(RecipeDataMixin, TestCase):
+    """Заміна страви в одному прийомі."""
+
+    def setUp(self):
+        """Шість страв у базі."""
+        self.make_recipes()
+
+    def recipe(self, name):
+        """Страва за назвою."""
+        return Recipe.objects.get(name=name)
+
+    def page(self, **params):
+        """Головна сторінка з параметрами → HTML."""
+        return self.client.get('/', params).content.decode()
+
+    def first_dinner(self):
+        """Яка страва стоїть на вечерю першого дня тижня без замін."""
+        from nutrition.views import build_plan_days, read_choices
+        return build_plan_days(read_choices({'period': 'week'}))[0]['day'][2]['recipe_name']
+
+    def test_parse_and_format_swaps(self):
+        from nutrition.views import format_swaps, parse_swaps
+        self.assertEqual(parse_swaps('0.1.12,2.0.5'), {(0, 1): 12, (2, 0): 5})
+        self.assertEqual(parse_swaps('bad,1.2,1.2.x,-1.0.3,0.0.²,' + '9' * 20 + '.0.1'), {})
+        self.assertEqual(parse_swaps('0.1.3,0.1.4'), {(0, 1): 4})
+        self.assertEqual(parse_swaps(None), {})
+        self.assertEqual(format_swaps({(2, 0): 5, (0, 1): 12}), '0.1.12,2.0.5')
+
+    def test_swap_replaces_dish_and_keeps_meal_calories(self):
+        other = 'Страва А' if self.first_dinner() != 'Страва А' else 'Страва Б'
+        from nutrition.views import build_plan_days, read_choices
+        days = build_plan_days(read_choices({'period': 'week', 'swaps': f'0.2.{self.recipe(other).pk}'}))
+        dinner = days[0]['day'][2]
+        self.assertEqual(dinner['recipe_name'], other)
+        self.assertAlmostEqual(meal_totals(dinner['meal'])['calories'], dinner['calories'])
+
+    def test_swap_that_does_not_fit_the_meal_is_ignored(self):
+        from nutrition.views import build_plan_days, read_choices
+        breakfast_only = self.recipe('Сніданкова').pk
+        days = build_plan_days(read_choices({'period': 'week', 'swaps': f'0.2.{breakfast_only},0.9.{breakfast_only},99.0.1,0.0.999999'}))
+        self.assertEqual(days[0]['day'][2]['recipe_name'], self.first_dinner())
+
+    def test_page_offers_only_fitting_dishes_and_links_keep_the_plan(self):
+        html = self.page(period='week', meal=2)
+        self.assertIn('Замінити страву', html)
+        swap_links = re.findall(r'class="swap-option" href="([^"]+)"', html)
+        self.assertTrue(swap_links)
+        self.assertFalse(any(f'.{self.recipe("Сніданкова").pk}' in link.split('swaps=')[1].split('&amp;')[0][-6:] for link in swap_links if 'swaps=0.2.' in link))
+        self.assertTrue(all('period=week' in link for link in swap_links))
+
+    def test_swap_shows_on_page_with_reset_link_and_reaches_shopping_and_save(self):
+        other = 'Страва А' if self.first_dinner() != 'Страва А' else 'Страва Б'
+        swaps = f'0.2.{self.recipe(other).pk}'
+        html = self.page(period='week', swaps=swaps, meal=2)
+        self.assertIn(f'<h2 class="panel-title">{other}</h2>', html)
+        self.assertIn('Повернути страву, яку підібрав застосунок', html)
+        self.assertIn(f'swaps={swaps.replace(".", ".")}', html)
+
+        self.client.post(reverse('plan_save'), {'query': f'period=week&swaps={swaps}', 'name': 'Із заміною'})
+        plan = MealPlan.objects.get(name='Із заміною')
+        self.assertIn(other, set(plan.items.filter(day_number=0, meal_number=2).values_list('recipe_name', flat=True)))
+
+    def test_dishes_already_in_the_day_are_not_offered(self):
+        html = self.page(period='week', meal=0)
+        dishes_today = re.findall(r'<span class="meal-dish">([^<]+)</span>', html)[:3]
+        offered = set(re.findall(r'<span class="swap-name">([^<]+)</span>', html))
+        self.assertTrue(offered)
+        self.assertFalse(offered & set(dishes_today))
+
+    def test_phone_cards_fold_out_with_composition(self):
+        html = self.page(period='week', meal=1)
+        self.assertEqual(html.count('<details class="meal-fold"'), 3)
+        self.assertEqual(html.count('<details class="meal-fold" open>'), 1)
 
 
 class NoPricesTests(RecipeDataMixin, TestCase):

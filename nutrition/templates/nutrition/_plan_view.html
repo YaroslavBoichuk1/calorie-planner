@@ -9,44 +9,38 @@
 
 <div class="plan-grid">
     <div class="plan-main">
-        <!-- Прийоми дня: тарілки -->
-        <div class="meals">
+        <!-- Комп'ютер: тарілки прийомів, склад вибраної страви окремою панеллю -->
+        <div class="meals meals-desktop">
             {% for m in view.meals %}
             <a class="meal-card{% if m.selected %} is-active{% endif %}" href="{{ m.url }}"{% if m.selected %} aria-current="true"{% endif %}>
-                <span class="meal-label num">{{ m.name }} · {{ m.calories|floatformat:0 }} ккал</span>
-                <svg class="plate" viewBox="0 0 120 120" aria-hidden="true">
-                    <circle cx="60" cy="64" r="54" class="plate-shadow"></circle>
-                    <circle cx="60" cy="60" r="54" class="plate-rim"></circle>
-                    <circle cx="60" cy="60" r="46" class="plate-well"></circle>
-                    {% for s in m.slices %}<path d="{{ s.d }}" fill="{{ s.color }}" class="plate-food"></path>{% endfor %}
-                </svg>
-                <span class="meal-dish">{{ m.dish }}</span>
-                <span class="meal-macros num">
-                    {% if m.totals.cost is not None %}<span class="price-pill">{{ m.totals.cost|floatformat:2 }} грн</span>{% endif %}
-                    <span><span class="dot dot-protein"></span>Б {{ m.totals.protein|floatformat:0 }} г</span>
-                    <span><span class="dot dot-fat"></span>Ж {{ m.totals.fat|floatformat:0 }} г</span>
-                    <span><span class="dot dot-carbs"></span>В {{ m.totals.carbs|floatformat:0 }} г</span>
-                </span>
+                {% include 'nutrition/_meal_face.html' %}
             </a>
             {% endfor %}
         </div>
 
-        <!-- Склад вибраної страви -->
-        <section class="panel" aria-label="Склад страви">
-            <div class="eyebrow">Склад · {{ view.chosen.name }}</div>
-            <h2 class="panel-title">{{ view.chosen.dish }}</h2>
-            <ul class="composition">
-                {% for it in view.chosen.items %}
-                <li>
-                    <span class="swatch" style="background: {{ it.color }}" aria-hidden="true"></span>
-                    <span class="composition-body">
-                        <span class="composition-line"><span>{{ it.name }}</span><span class="num">{{ it.grams|floatformat:0 }} г{% if it.pieces %} · ≈ {{ it.pieces }} шт{% endif %}</span></span>
-                        <span class="bar" aria-hidden="true"><span style="width: {{ it.width }}%"></span></span>
-                    </span>
-                </li>
-                {% endfor %}
-            </ul>
+        <section class="panel composition-panel" aria-label="Склад страви">
+            <div class="composition-head">
+                <div>
+                    <div class="eyebrow">Склад · {{ view.chosen.name }}</div>
+                    <h2 class="panel-title">{{ view.chosen.dish }}</h2>
+                </div>
+                {% with m=view.chosen %}{% include 'nutrition/_swap.html' %}{% endwith %}
+            </div>
+            {% include 'nutrition/_composition.html' with items=view.chosen.items %}
         </section>
+
+        <!-- Телефон: картка прийому розгортається й показує склад -->
+        <div class="meals-mobile">
+            {% for m in view.meals %}
+            <details class="meal-fold"{% if m.selected %} open{% endif %}>
+                <summary class="meal-card">{% include 'nutrition/_meal_face.html' %}</summary>
+                <div class="meal-fold-body">
+                    {% include 'nutrition/_composition.html' with items=m.items %}
+                    {% include 'nutrition/_swap.html' %}
+                </div>
+            </details>
+            {% endfor %}
+        </div>
 
         {% if show_shopping %}
         <!-- Список покупок коротко -->

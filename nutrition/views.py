@@ -13,7 +13,8 @@ from .models import MealPlan, Recipe
 from .plans import load_plan_days, save_plan
 from .planner import (
     MIN_DAY_CALORIES, MAX_DAY_CALORIES, WEEK_DAYS,
-    build_recipe_period, day_totals, meal_totals, period_totals, shopping_list,
+    build_recipe_period, day_totals, meal_totals, period_totals, recipe_shares, recipe_totals,
+    shopping_list, swap_meal,
 )
 
 PERIODS = ('day', 'week', 'custom')
@@ -35,7 +36,8 @@ def parse_days_count(raw_days):
     return min(max(parse_int(raw_days, DEFAULT_DAYS), 1), MAX_DAYS)
 
 
-PLAN_KEYS = ('period', 'days', 'calories', 'protein_pct', 'fat_pct', 'carbs_pct')   # параметри, що описують сам раціон
+PLAN_KEYS = ('period', 'days', 'calories', 'protein_pct', 'fat_pct', 'carbs_pct', 'swaps')   # параметри, що описують сам раціон
+MAX_SWAPS = 100               # більше замін в адресі не читаємо
 PERIOD_LABELS = {'day': 'День', 'week': 'Тиждень', 'custom': 'Свій'}
 SHORT_DAY_NAMES = {
     'Понеділок': 'Пн', 'Вівторок': 'Вт', 'Середа': 'Ср', 'Четвер': 'Чт',
@@ -54,7 +56,7 @@ def plan_query(data, **changes):
     """Параметри раціону з адреси (без вибору дня, страви чи товарів) → рядок запиту; changes підміняють значення."""
     params = {key: data.get(key) for key in PLAN_KEYS if data.get(key) not in (None, '')}
     params.update({key: value for key, value in changes.items() if value is not None})
-    return urlencode(params)
+    return urlencode({key: value for key, value in params.items() if value != ''})
 
 
 def ring_arcs(values, radius=RING_RADIUS, gap=RING_GAP):
@@ -130,6 +132,21 @@ def short_day_name(name, index, numbered):
     return f'{index + 1} · {short}' if numbered else short
 
 
+def composition_of(meal):
+    """Склад страви для показу: продукти з грамами, штуками, кольором і довжиною смужки."""
+    biggest = max((item['grams'] for item in meal), default=0) or 1
+    return [
+        {
+            'name': item['product'].name,
+            'grams': item['grams'],
+            'pieces': item['product'].pieces_to_use(item['grams']),
+            'color': product_color(item['product']),
+            'width': round(item['grams'] / biggest * 100),
+        }
+        for item in meal
+    ]
+
+
 def plan_view(plan_days, targets, day_index, meal_index, link):
     """Дані для сторінки раціону: вкладки днів, прийоми вибраного дня, склад вибраної страви й підсумок дня.
     link(day, meal) повертає адресу, яка відкриває цей день і цю страву."""
@@ -151,6 +168,8 @@ def plan_view(plan_days, targets, day_index, meal_index, link):
     meals = []
     for index, meal_info in enumerate(day):
         meals.append({
+            'index': index,
+            'items': composition_of(meal_info['meal']),
             'name': meal_info['name'],
             'calories': meal_info['calories'],
             'dish': dish_name(meal_info),
@@ -160,26 +179,14 @@ def plan_view(plan_days, targets, day_index, meal_index, link):
             'selected': index == meal_index,
         })
 
-    chosen = day[meal_index]
-    biggest = max((item['grams'] for item in chosen['meal']), default=0) or 1
-    composition = [
-        {
-            'name': item['product'].name,
-            'grams': item['grams'],
-            'pieces': item['product'].pieces_to_use(item['grams']),
-            'color': product_color(item['product']),
-            'width': round(item['grams'] / biggest * 100),
-        }
-        for item in chosen['meal']
-    ]
-
     totals = day_totals(day)
     period = period_totals(plan_days)
     return {
         'days': days if len(plan_days) > 1 else [],
         'day_name': plan_days[day_index]['name'] if len(plan_days) > 1 else 'Сьогодні',
+        'day_index': day_index,
         'meals': meals,
-        'chosen': {'name': chosen['name'], 'dish': meals[meal_index]['dish'], 'items': composition},
+        'chosen': meals[meal_index],
         'summary': {'totals': totals, 'macros': macro_summary(totals, targets)},
         'period': {'days': len(plan_days), 'totals': period},
         'shopping_count': len(shopping_list(plan_days)),
@@ -200,6 +207,22 @@ def shopping_rows(days):
     return rows
 
 
+def parse_swaps(raw):
+    """Заміни страв з адреси: «0.1.12,2.0.5» (день.прийом.id страви) → {(день, прийом): id}. Погані шматки пропускає."""
+    swaps = {}
+    for part in (raw or '').split(',')[:MAX_SWAPS]:
+        pieces = part.split('.')
+        if len(pieces) == 3 and all(piece.isascii() and piece.isdigit() and len(piece) < 10 for piece in pieces):
+            day, meal, recipe_id = (int(piece) for piece in pieces)
+            swaps[(day, meal)] = recipe_id
+    return swaps
+
+
+def format_swaps(swaps):
+    """Заміни страв → рядок для адреси (порожній, якщо замін нема)."""
+    return ','.join(f'{day}.{meal}.{recipe_id}' for (day, meal), recipe_id in sorted(swaps.items()))
+
+
 def read_choices(data):
     """Читає вибір користувача з параметрів адреси → словник для побудови раціону."""
     period = data.get('period') or 'day'
@@ -218,20 +241,46 @@ def read_choices(data):
         'protein_pct': parse_int(data.get('protein_pct'), 30),
         'fat_pct': parse_int(data.get('fat_pct'), 30),
         'carbs_pct': parse_int(data.get('carbs_pct'), 40),
+        'swaps': parse_swaps(data.get('swaps')),
     }
 
 
 def build_plan_days(choices):
     """Будує раціон зі страв за вибором користувача → список днів {name, day}. Кидає ValueError, якщо ціль чи страви не годяться."""
     days_count = 1 if choices['period'] == 'day' else choices['days_count']
-    return build_recipe_period(
-        Recipe.objects.prefetch_related('ingredients__product'),
+    recipes = list(Recipe.objects.prefetch_related('ingredients__product'))
+    days = build_recipe_period(
+        recipes,
         days_count,
         choices['target_calories'],
         choices['protein_pct'] / 100,
         choices['fat_pct'] / 100,
         choices['carbs_pct'] / 100,
     )
+    by_id = {recipe.pk: recipe for recipe in recipes}
+    for (day_index, meal_index), recipe_id in choices.get('swaps', {}).items():
+        if recipe_id in by_id:
+            swap_meal(days, day_index, meal_index, by_id[recipe_id])
+    return days
+
+
+def swap_options(recipes, choices, request, day_index, meal_index, meal_name, dishes_today):
+    """Страви, якими можна замінити прийом, із посиланнями → список {name, shares, url}; найближчі до цілі БЖВ спершу.
+    Страв, які вже є в цьому дні, не пропонує, щоб за день нічого не повторювалось."""
+    targets = {'protein': choices['protein_pct'] / 100, 'fat': choices['fat_pct'] / 100, 'carbs': choices['carbs_pct'] / 100}
+    options = []
+    for recipe in recipes:
+        if recipe.name in dishes_today or not recipe.fits_meal(meal_name) or recipe_totals(recipe)['calories'] <= 0:
+            continue
+        shares = recipe_shares(recipe)
+        swaps = {**choices['swaps'], (day_index, meal_index): recipe.pk}
+        options.append({
+            'name': recipe.name,
+            'shares': {key: round(value * 100) for key, value in shares.items()},
+            'miss': sum(abs(shares[key] - targets[key]) for key in targets),
+            'url': f"?{plan_query(request.GET, swaps=format_swaps(swaps), day=day_index, meal=meal_index)}",
+        })
+    return sorted(options, key=lambda option: option['miss'])
 
 
 def targets_of(choices):
@@ -265,10 +314,19 @@ def planner_view(request):
         """Адреса сторінки з вибраним днем і стравою."""
         return f"?{plan_query(request.GET, day=day_index, meal=meal_index)}"
 
-    context['view'] = plan_view(
+    view = plan_view(
         plan_days, targets_of(choices),
         parse_int(request.GET.get('day'), 0), parse_int(request.GET.get('meal'), 0), link,
     )
+    recipes = list(Recipe.objects.prefetch_related('ingredients__product'))
+    dishes_today = {meal['dish'] for meal in view['meals']}
+    for meal in view['meals']:
+        slot = (view['day_index'], meal['index'])
+        meal['swap_options'] = swap_options(recipes, choices, request, *slot, meal['name'], dishes_today)
+        if slot in choices['swaps']:
+            rest = {key: value for key, value in choices['swaps'].items() if key != slot}
+            meal['reset_url'] = f"?{plan_query(request.GET, swaps=format_swaps(rest), day=slot[0], meal=slot[1])}"
+    context['view'] = view
     return render(request, 'nutrition/planner.html', context)
 
 

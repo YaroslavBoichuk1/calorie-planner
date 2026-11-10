@@ -177,6 +177,27 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .bar { display: block; height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
 .bar span { display: block; height: 6px; border-radius: 999px; background: var(--ink); }
 
+/* === Склад страви й заміна === */
+.composition-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.meals-mobile { display: none; }
+.swap { position: relative; }
+.swap > summary { list-style: none; }
+.swap > summary::-webkit-details-marker { display: none; }
+.swap[open] > summary { background: var(--ink); color: #FFFFFF; border-color: var(--ink); }
+.swap-body { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.composition-head .swap[open] { flex-basis: 100%; }
+.swap-hint { margin: 0; font-size: 13px; color: var(--muted); }
+.swap-reset { font-size: 14px; font-weight: 700; color: var(--protein); text-decoration: none; }
+.swap-list { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.swap-option {
+    display: flex; flex-direction: column; gap: 6px; min-height: 64px; padding: 12px 14px;
+    border: 1px solid var(--line); border-radius: 16px; text-decoration: none; background: var(--card);
+}
+.swap-option:hover { border-color: var(--ink); }
+.swap-name { font-size: 15px; font-weight: 700; }
+.swap-shares { display: flex; gap: 10px; font-size: 13px; font-weight: 600; color: var(--muted-strong); }
+.swap-shares > span { display: inline-flex; align-items: center; gap: 4px; }
+
 .panel-dark[aria-label="Список покупок"] { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
 
 /* === Підсумок: кільце й БЖВ === */
@@ -333,13 +354,26 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     .bottom-nav .nav-link:hover { background: #2A2E2B; color: #FFFFFF; }
     .bottom-nav .nav-link.is-active { background: #FFFFFF; color: var(--ink); box-shadow: none; }
 
-    .meals { grid-template-columns: 1fr; gap: 8px; }
+    .meals-desktop, .composition-panel { display: none; }
+    .meals-mobile { display: flex; flex-direction: column; gap: 8px; }
+    .meal-fold { border-radius: 24px; background: var(--card); }
+    .meal-fold > summary { list-style: none; cursor: pointer; position: relative; padding-right: 40px; background: transparent; }
+    .meal-fold > summary::-webkit-details-marker { display: none; }
+    .meal-fold > summary::after {
+        content: ""; position: absolute; right: 18px; top: 50%; width: 9px; height: 9px; margin-top: -7px;
+        border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .2s;
+    }
+    .meal-fold[open] > summary::after { transform: rotate(-135deg); margin-top: -2px; }
+    .meal-fold[open] { box-shadow: inset 0 0 0 2px var(--ink); }
+    .meal-fold-body { padding: 4px 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+    .meal-fold-body .composition { grid-template-columns: 1fr; gap: 12px; }
+    .meal-fold-body .swatch { width: 36px; height: 36px; }
+    .swap-list { grid-template-columns: 1fr; }
     .meal-card { display: grid; grid-template-columns: 96px 1fr; grid-template-areas: "plate label" "plate dish" "plate macros"; align-items: center; justify-items: start; gap: 4px 16px; padding: 14px 16px; border-radius: 24px; text-align: left; background: var(--card); }
     .meal-card .plate { grid-area: plate; width: 96px; }
     .meal-label { grid-area: label; }
     .meal-dish { grid-area: dish; font-size: 17px; }
     .meal-macros { grid-area: macros; justify-content: flex-start; }
-    .meal-card.is-active { box-shadow: inset 0 0 0 2px var(--ink); }
     .silpo-need { flex-basis: 100%; }
 }
 

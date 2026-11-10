@@ -1,0 +1,14 @@
+<span class="meal-label num">{{ m.name }} · {{ m.calories|floatformat:0 }} ккал</span>
+<svg class="plate" viewBox="0 0 120 120" aria-hidden="true">
+    <circle cx="60" cy="64" r="54" class="plate-shadow"></circle>
+    <circle cx="60" cy="60" r="54" class="plate-rim"></circle>
+    <circle cx="60" cy="60" r="46" class="plate-well"></circle>
+    {% for s in m.slices %}<path d="{{ s.d }}" fill="{{ s.color }}" class="plate-food"></path>{% endfor %}
+</svg>
+<span class="meal-dish">{{ m.dish }}</span>
+<span class="meal-macros num">
+    {% if m.totals.cost is not None %}<span class="price-pill">{{ m.totals.cost|floatformat:2 }} грн</span>{% endif %}
+    <span><span class="dot dot-protein"></span>Б {{ m.totals.protein|floatformat:0 }} г</span>
+    <span><span class="dot dot-fat"></span>Ж {{ m.totals.fat|floatformat:0 }} г</span>
+    <span><span class="dot dot-carbs"></span>В {{ m.totals.carbs|floatformat:0 }} г</span>
+</span>

@@ -272,6 +272,23 @@ def build_recipe_day(day_recipes, day_calories):
     return meals
 
 
+def swap_meal(days, day_index, meal_index, recipe):
+    """Ставить іншу страву в один прийом: порція підганяється під калорії цього прийому.
+    Повертає False і нічого не змінює, якщо такого прийому нема або страва на нього не годиться."""
+    if not 0 <= day_index < len(days):
+        return False
+    day = days[day_index]['day']
+    if not 0 <= meal_index < len(day):
+        return False
+    meal_info = day[meal_index]
+    calories = recipe_totals(recipe)['calories']
+    if calories <= 0 or not recipe.fits_meal(meal_info['name']):
+        return False
+    meal_info['recipe_name'] = recipe.name
+    meal_info['meal'] = scale_recipe(recipe, meal_info['calories'] / calories)
+    return True
+
+
 def build_recipe_period(recipes, days_count, day_calories, protein_pct, fat_pct, carbs_pct):
     """Будує раціон зі страв на days_count днів → список днів {name, day}. Кидає ValueError, якщо ціль чи страви не годяться."""
     check_day_targets(day_calories, protein_pct, fat_pct, carbs_pct)
