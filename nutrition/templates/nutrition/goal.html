@@ -10,7 +10,9 @@
     </div>
 </header>
 
-<form method="get" action="{% url 'planner' %}" class="goal">
+{# Хто увійшов — ціль зберігається в профіль (POST); гість просто відкриває раціон з цими параметрами (GET) #}
+{% if user.is_authenticated %}<form method="post" action="{% url 'goal_save' %}" class="goal">{% csrf_token %}
+{% else %}<form method="get" action="{% url 'planner' %}" class="goal">{% endif %}
     <section class="panel goal-section">
         <h2 class="field-label">Період</h2>
         <div class="segmented segmented-wide" role="radiogroup" aria-label="Період">
@@ -48,6 +50,6 @@
         <p class="goal-sum num{% if pct_sum != 100 %} is-wrong{% endif %}">Разом {{ pct_sum }}%{% if pct_sum != 100 %} — має бути 100%{% endif %}</p>
     </section>
 
-    <button type="submit" class="btn btn-accent btn-wide">Скласти раціон</button>
+    <button type="submit" class="btn btn-accent btn-wide">{% if user.is_authenticated %}Зберегти ціль і скласти раціон{% else %}Скласти раціон{% endif %}</button>
 </form>
 {% endblock %}

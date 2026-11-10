@@ -10,6 +10,10 @@
         <div class="eyebrow num">Збережено {{ plan.created_at|date:"d.m.Y H:i" }} · днів: {{ plan.days_count }} · {{ plan.calories }} ккал на день{% if cost is not None %} · вартість за поточними цінами{% endif %}</div>
         <h1 class="page-title">{{ plan.name }}</h1>
     </div>
+    <form method="post" action="{% url 'plan_delete' plan.pk %}" data-confirm="Видалити раціон «{{ plan.name }}»? Повернути його не вийде.">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-ghost btn-danger">Видалити раціон</button>
+    </form>
 </header>
 
 {% include 'nutrition/_plan_view.html' %}

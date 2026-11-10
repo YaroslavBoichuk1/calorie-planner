@@ -11,11 +11,19 @@
 </header>
 <div class="plan-rows">
     {% for plan in plans %}
-    <a class="plan-row" href="{% url 'plan_detail' plan.pk %}">
-        <span class="plan-row-name">{{ plan.name }}</span>
-        <span class="plan-row-meta num">{{ plan.created_at|date:"d.m.Y H:i" }} · днів: {{ plan.days_count }} · {{ plan.calories }} ккал на день</span>
-        {% with cost=plan.total_cost %}{% if cost is not None %}<span class="plan-row-cost num">{{ cost|floatformat:2 }} грн</span>{% endif %}{% endwith %}
-    </a>
+    <div class="plan-item">
+        <a class="plan-row" href="{% url 'plan_detail' plan.pk %}">
+            <span class="plan-row-name">{{ plan.name }}</span>
+            <span class="plan-row-meta num">{{ plan.created_at|date:"d.m.Y H:i" }} · днів: {{ plan.days_count }} · {{ plan.calories }} ккал на день</span>
+            {% with cost=plan.total_cost %}{% if cost is not None %}<span class="plan-row-cost num">{{ cost|floatformat:2 }} грн</span>{% endif %}{% endwith %}
+        </a>
+        <form method="post" action="{% url 'plan_delete' plan.pk %}" data-confirm="Видалити раціон «{{ plan.name }}»? Повернути його не вийде.">
+            {% csrf_token %}
+            <button type="submit" class="icon-button icon-danger" aria-label="Видалити раціон «{{ plan.name }}»" title="Видалити">
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5h13M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M5 5.5l.8 10.6a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L15 5.5M8.5 9v5M11.5 9v5"></path></svg>
+            </button>
+        </form>
+    </div>
     {% empty %}
     <p class="muted">Поки немає збережених раціонів. Склади раціон і натисни «Зберегти раціон».</p>
     {% endfor %}

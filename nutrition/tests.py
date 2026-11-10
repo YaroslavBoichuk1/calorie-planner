@@ -1,3 +1,4 @@
+import io
 import re
 import json
 from unittest.mock import patch
@@ -6,11 +7,12 @@ from urllib.parse import parse_qs, urlparse
 import requests
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test import SimpleTestCase, TestCase
+from django.core.management import CommandError, call_command
+from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 
-from . import login_limits, silpo
-from .models import MealPlan, Product, Recipe, RecipeIngredient, SilpoClient
+from . import login_limits, silpo, views
+from .models import BoughtList, MealPlan, PlanItem, Product, Profile, Recipe, RecipeIngredient, SilpoClient
 from .planner import (
     DAY_PERCENTAGE, NO_RECIPES_MESSAGE, build_recipe_period, day_totals, meal_totals, period_totals,
 )
@@ -26,6 +28,11 @@ def fake_response(data, status=200, content_type='application/json'):
 
 
 TOKENS = {'access_token': 'access-secret', 'refresh_token': 'refresh-secret', 'expires_in': 3600}
+
+
+def make_account(email='cook@example.com', password='Smachnyi-borshch-42'):
+    """Користувач для тестів: пошта лежить і в username, як після реєстрації."""
+    return get_user_model().objects.create_user(username=email, email=email, password=password)
 
 
 class SilpoLoginTests(TestCase):
@@ -363,6 +370,7 @@ class SwapTests(RecipeDataMixin, TestCase):
         self.assertIn('Повернути страву, яку підібрав застосунок', html)
         self.assertIn(f'swaps={swaps.replace(".", ".")}', html)
 
+        self.client.force_login(make_account())
         self.client.post(reverse('plan_save'), {'query': f'period=week&swaps={swaps}', 'name': 'Із заміною'})
         plan = MealPlan.objects.get(name='Із заміною')
         self.assertIn(other, set(plan.items.filter(day_number=0, meal_number=2).values_list('recipe_name', flat=True)))
@@ -450,6 +458,7 @@ class BoughtTests(RecipeDataMixin, TestCase):
         self.assertEqual(guarded.post(reverse('shopping_check'), {'list_key': self.key}).status_code, 403)
 
     def test_saved_plan_has_its_own_checks(self):
+        self.client.force_login(make_account())
         self.client.post(reverse('plan_save'), {'query': 'period=week', 'name': 'Мій'})
         plan = MealPlan.objects.get(name='Мій')
         self.check(self.products['carb'], key=f'plan:{plan.pk}')
@@ -503,6 +512,7 @@ class VariantTests(RecipeDataMixin, TestCase):
     def test_variant_reaches_shopping_and_save(self):
         html = self.client.get('/', {'period': 'week', 'variant': '4'}).content.decode()
         self.assertIn('/shopping/?period=week&amp;variant=4', html)
+        self.client.force_login(make_account())
         self.client.post(reverse('plan_save'), {'query': 'period=week&variant=4', 'name': 'Варіант'})
         plan = MealPlan.objects.get(name='Варіант')
         saved = [name for day in range(7) for name in dict.fromkeys(
@@ -555,6 +565,7 @@ class NoPricesTests(RecipeDataMixin, TestCase):
                 self.assertContains(response, 'Список покупок')
 
     def test_saved_plan_without_prices(self):
+        self.client.force_login(make_account())
         response = self.client.post(reverse('plan_save'), {'query': 'period=week', 'name': 'Без цін'})
         plan = MealPlan.objects.get(name='Без цін')
         self.assertIsNone(plan.total_cost())
@@ -1422,9 +1433,12 @@ class AccountTests(TestCase):
     def test_register_keeps_session_data(self):
         session = self.client.session
         session['bought'] = {'q:period=week': [1, 2]}
+        session[silpo.TOKENS_KEY] = dict(TOKENS)
         session.save()
         self.register()
-        self.assertEqual(self.client.session['bought'], {'q:period=week': [1, 2]})
+        self.assertEqual(self.client.session[silpo.TOKENS_KEY]['access_token'], 'access-secret')   # «Сільпо» лишилось
+        self.assertNotIn('bought', self.client.session)                                           # галочки переїхали в акаунт
+        self.assertEqual(BoughtList.objects.get(key='q:period=week').product_ids, [1, 2])
 
     def test_login_with_any_letter_case(self):
         user = self.make_user()
@@ -1538,3 +1552,204 @@ class AccountTests(TestCase):
         for name in ('login', 'register'):
             with self.subTest(page=name):
                 self.assertRedirects(self.client.get(reverse(name)), reverse('planner'), fetch_redirect_response=False)
+
+
+class OwnershipTests(RecipeDataMixin, TestCase):
+    """Етап 13.2: раціони, галочки й ціль належать акаунту."""
+
+    def setUp(self):
+        self.make_recipes()
+        self.owner = make_account('owner@example.com')
+        self.other = make_account('other@example.com')
+
+    def save(self, name='Мій', query='period=week'):
+        self.client.post(reverse('plan_save'), {'query': query, 'name': name})
+        return MealPlan.objects.get(name=name)
+
+    def test_guest_is_asked_to_log_in_before_saving(self):
+        response = self.client.post(reverse('plan_save'), {'query': 'period=week&variant=2', 'name': 'Гість'})
+        self.assertRedirects(response, f'{reverse("login")}?next=%2F%3Fperiod%3Dweek%26variant%3D2', fetch_redirect_response=False)
+        self.assertFalse(MealPlan.objects.exists())
+        html = self.client.get('/', {'period': 'week'}).content.decode()
+        self.assertIn('Увійти, щоб зберегти', html)
+        self.assertNotIn('action="/plans/save/"', html)
+
+    def test_saved_plan_belongs_to_its_author(self):
+        self.client.force_login(self.owner)
+        self.assertEqual(self.save().owner, self.owner)
+
+    def test_plans_are_private(self):
+        self.client.force_login(self.owner)
+        mine = self.save('Мій')
+        ownerless = MealPlan.objects.create(name='Старий', period='day', days_count=1, calories=2000, protein_pct=30, fat_pct=30, carbs_pct=40)
+        self.client.force_login(self.other)
+        theirs = self.save('Чужий')
+        html = self.client.get(reverse('plan_list')).content.decode()
+        self.assertIn('Чужий', html)
+        self.assertNotIn('Мій', html)
+        self.assertNotIn('Старий', html)
+        for plan in (mine, ownerless):
+            with self.subTest(plan=plan.name):
+                self.assertEqual(self.client.get(reverse('plan_detail', args=[plan.pk])).status_code, 404)
+        self.assertEqual(self.client.get(reverse('plan_detail', args=[theirs.pk])).status_code, 200)
+
+    def test_guest_cannot_open_saved_plans(self):
+        self.client.force_login(self.owner)
+        plan = self.save()
+        self.client.logout()
+        for url in (reverse('plan_list'), reverse('plan_detail', args=[plan.pk])):
+            with self.subTest(url=url):
+                self.assertRedirects(self.client.get(url), f'{reverse("login")}?next={url}', fetch_redirect_response=False)
+
+    def test_deleting_account_deletes_its_plans(self):
+        self.client.force_login(self.owner)
+        self.save()
+        self.owner.delete()
+        self.assertFalse(MealPlan.objects.exists())
+
+    def test_claim_plans_command(self):
+        MealPlan.objects.create(name='Старий', period='day', days_count=1, calories=2000, protein_pct=30, fat_pct=30, carbs_pct=40)
+        out = io.StringIO()
+        call_command('claim_plans', ' Owner@Example.com', stdout=out)
+        self.assertIn('Раціонів передано: 1', out.getvalue())
+        self.assertEqual(MealPlan.objects.get().owner, self.owner)
+        with self.assertRaises(CommandError):
+            call_command('claim_plans', 'nobody@example.com', stdout=io.StringIO())
+
+    # --- галочки ---
+
+    def check(self, client, product, bought=True, key='q:period=week'):
+        return client.post(reverse('shopping_check'), {'list_key': key, 'product': product.pk, 'bought': '1' if bought else '0', 'next': '/'})
+
+    def test_ticks_follow_the_account_to_another_device(self):
+        self.client.force_login(self.owner)
+        self.check(self.client, self.products['protein'])
+        self.assertNotIn('bought', self.client.session)
+        phone = Client()
+        phone.force_login(self.owner)
+        self.assertIn('data-bought-count>1<', phone.get('/shopping/', {'period': 'week'}).content.decode())
+        stranger = Client()
+        stranger.force_login(self.other)
+        self.assertIn('data-bought-count>0<', stranger.get('/shopping/', {'period': 'week'}).content.decode())
+
+    def test_uncheck_and_reset_in_account(self):
+        self.client.force_login(self.owner)
+        self.check(self.client, self.products['protein'])
+        self.check(self.client, self.products['fat'])
+        self.check(self.client, self.products['protein'], bought=False)
+        self.assertEqual(BoughtList.objects.get().product_ids, [self.products['fat'].pk])
+        self.client.post(reverse('shopping_check'), {'list_key': 'q:period=week', 'reset': '1', 'next': '/'})
+        self.assertFalse(BoughtList.objects.exists())
+
+    def test_guest_ticks_join_account_on_login(self):
+        self.client.force_login(self.owner)
+        self.check(self.client, self.products['protein'])
+        self.client.logout()
+        self.check(self.client, self.products['fat'])                    # гість у тому ж браузері
+        self.client.post(reverse('login'), {'email': 'owner@example.com', 'password': 'Smachnyi-borshch-42'})
+        ids = BoughtList.objects.get(user=self.owner).product_ids
+        self.assertEqual(ids, sorted([self.products['protein'].pk, self.products['fat'].pk]))
+        self.assertNotIn('bought', self.client.session)
+
+    def test_broken_session_ticks_are_skipped_on_login(self):
+        session = self.client.session
+        session['bought'] = {'evil': [1], 'q:period=day': ['x', -5, 3], 'plan:1': 'not-a-list'}
+        session.save()
+        self.client.post(reverse('login'), {'email': 'owner@example.com', 'password': 'Smachnyi-borshch-42'})
+        self.assertEqual(list(BoughtList.objects.values_list('key', 'product_ids')), [('q:period=day', [3])])
+
+    def test_account_keeps_only_recent_lists(self):
+        self.client.force_login(self.owner)
+        for index in range(views.MAX_ACCOUNT_BOUGHT_LISTS + 5):
+            self.check(self.client, self.products['protein'], key=f'q:calories={1000 + index}')
+        keys = set(BoughtList.objects.values_list('key', flat=True))
+        self.assertEqual(len(keys), views.MAX_ACCOUNT_BOUGHT_LISTS)
+        self.assertIn(f'q:calories={1000 + views.MAX_ACCOUNT_BOUGHT_LISTS + 4}', keys)
+        self.assertNotIn('q:calories=1000', keys)
+
+    # --- ціль ---
+
+    def goal(self, **changes):
+        data = {'period': 'week', 'days': '3', 'calories': '1800', 'protein_pct': '35', 'fat_pct': '25', 'carbs_pct': '40', **changes}
+        return self.client.post(reverse('goal_save'), data)
+
+    def test_goal_form_saves_for_account_and_not_for_guest(self):
+        self.assertIn('method="get"', self.client.get(reverse('goal')).content.decode())
+        self.client.force_login(self.owner)
+        self.assertIn('action="/goal/save/"', self.client.get(reverse('goal')).content.decode())
+        response = self.goal()
+        self.assertRedirects(response, '/?period=week&days=3&calories=1800&protein_pct=35&fat_pct=25&carbs_pct=40', fetch_redirect_response=False)
+        profile = Profile.objects.get(user=self.owner)
+        self.assertEqual((profile.calories, profile.protein_pct, profile.period), (1800, 35, 'week'))
+
+    def test_saved_goal_opens_when_address_has_none(self):
+        self.client.force_login(self.owner)
+        self.goal()
+        for path in ('/', '/shopping/', '/goal/'):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 302)
+                self.assertIn('calories=1800', response['Location'])
+                self.assertTrue(response['Location'].startswith(path + '?'))
+        response = self.client.get('/', {'day': '2'})                    # вибір дня лишається
+        self.assertIn('day=2', response['Location'])
+        self.assertEqual(self.client.get('/', {'calories': '2500'}).status_code, 200)   # свої параметри — без підміни
+        stranger = Client()
+        stranger.force_login(self.other)
+        self.assertEqual(stranger.get('/').status_code, 200)              # без збереженої цілі — як раніше
+
+    def test_impossible_goal_is_not_saved(self):
+        self.client.force_login(self.owner)
+        for bad in ({'protein_pct': '90'}, {'calories': '999999'}):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.goal(**bad).status_code, 302)
+        self.assertFalse(Profile.objects.exists())
+
+    def test_goal_save_needs_login_and_post(self):
+        response = self.goal()
+        self.assertTrue(response['Location'].startswith(reverse('login')))
+        self.assertFalse(Profile.objects.exists())
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get(reverse('goal_save')).status_code, 405)
+
+
+class PlanDeleteTests(RecipeDataMixin, TestCase):
+    """Кнопка «Видалити» у збережених раціонах."""
+
+    def setUp(self):
+        self.make_recipes()
+        self.owner = make_account('owner@example.com')
+        self.client.force_login(self.owner)
+        self.client.post(reverse('plan_save'), {'query': 'period=week', 'name': 'Тиждень'})
+        self.plan = MealPlan.objects.get()
+
+    def test_owner_deletes_plan_with_items_and_ticks(self):
+        key = f'plan:{self.plan.pk}'
+        self.client.post(reverse('shopping_check'), {'list_key': key, 'product': self.products['fat'].pk, 'bought': '1', 'next': '/'})
+        self.client.post(reverse('shopping_check'), {'list_key': 'q:period=week', 'product': self.products['fat'].pk, 'bought': '1', 'next': '/'})
+        response = self.client.post(reverse('plan_delete', args=[self.plan.pk]))
+        self.assertRedirects(response, reverse('plan_list'), fetch_redirect_response=False)
+        self.assertFalse(MealPlan.objects.exists())
+        self.assertFalse(PlanItem.objects.exists())
+        self.assertEqual(list(BoughtList.objects.values_list('key', flat=True)), ['q:period=week'])   # інші списки лишились
+        self.assertContains(self.client.get(reverse('plan_list')), 'Раціон «Тиждень» видалено')
+
+    def test_buttons_are_on_list_and_plan_page(self):
+        url = reverse('plan_delete', args=[self.plan.pk])
+        for page in (reverse('plan_list'), reverse('plan_detail', args=[self.plan.pk])):
+            with self.subTest(page=page):
+                html = self.client.get(page).content.decode()
+                self.assertIn(f'action="{url}" data-confirm="Видалити раціон «Тиждень»?', html)
+
+    def test_cannot_delete_someone_elses_plan(self):
+        stranger = Client()
+        stranger.force_login(make_account('other@example.com'))
+        self.assertEqual(stranger.post(reverse('plan_delete', args=[self.plan.pk])).status_code, 404)
+        guest = Client()
+        self.assertTrue(guest.post(reverse('plan_delete', args=[self.plan.pk]))['Location'].startswith(reverse('login')))
+        self.assertTrue(MealPlan.objects.exists())
+
+    def test_delete_needs_post(self):
+        self.assertEqual(self.client.get(reverse('plan_delete', args=[self.plan.pk])).status_code, 405)
+        self.assertEqual(self.client.post(f'/plans/{2 ** 64}/delete/').status_code, 404)
+        self.assertTrue(MealPlan.objects.exists())

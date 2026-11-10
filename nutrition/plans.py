@@ -13,9 +13,10 @@ def default_plan_name(period, days_count):
 
 
 @transaction.atomic
-def save_plan(name, choices, plan_days):
+def save_plan(name, choices, plan_days, owner=None):
     """Зберігає раціон у базу: один MealPlan і по PlanItem на кожен продукт → MealPlan."""
     plan = MealPlan.objects.create(
+        owner=owner,
         name=name.strip()[:100] or default_plan_name(choices['period'], len(plan_days)),
         period=choices['period'],
         days_count=len(plan_days),

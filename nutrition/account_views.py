@@ -9,7 +9,7 @@ from django.views.decorators.http import require_POST
 
 from . import login_limits
 from .forms import PASSWORD_HINT, LoginForm, RegisterForm, normalize_email
-from .views import safe_next_url
+from .views import move_session_bought, safe_next_url
 
 
 def auth_context(request, form, blocked=''):
@@ -44,6 +44,7 @@ def register_view(request):
             else:
                 login_limits.record_registration(ip)
                 login(request, user)     # дані сесії (галочки, «Сільпо») лишаються, міняється лише її ключ
+                move_session_bought(request)
                 messages.success(request, 'Акаунт створено, вхід виконано.')
                 return redirect(safe_next_url(request))
     return render(request, 'nutrition/register.html', auth_context(request, form, blocked))
@@ -65,6 +66,7 @@ def login_view(request):
         elif form.is_valid():
             login_limits.clear_login_failures(email)
             login(request, form.user)
+            move_session_bought(request)
             return redirect(safe_next_url(request))
         elif form.cleaned_data.get('email') and form.cleaned_data.get('password'):
             login_limits.record_login_failure(email, ip)    # пароль перевірили, і він не підійшов

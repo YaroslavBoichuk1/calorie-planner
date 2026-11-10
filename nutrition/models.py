@@ -1,9 +1,10 @@
 import math
 
+from django.conf import settings
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 
-# Create your models here.
+MAX_LIST_KEY = 600       # найдовший ключ списку покупок (параметри раціону з адреси)
 class Product(models.Model):
     UNIT_CHOICES = [
         ('g', 'на 100 г'),
@@ -79,6 +80,11 @@ class Product(models.Model):
 
 class MealPlan(models.Model):
     """Збережений раціон: назва й параметри, з якими його склали."""
+    # Чий раціон. Порожньо — раціон зі старих часів без акаунтів: його не бачить ніхто, доки не віддати командою claim_plans.
+    # Видалили акаунт — видаляються і його раціони.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name='meal_plans',
+    )
     name = models.CharField(max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)
     period = models.CharField(max_length=10)
@@ -166,3 +172,38 @@ class RecipeIngredient(models.Model):
     def __str__(self):
         """Короткий опис рядка — для адмінки."""
         return f'{self.product}: {self.grams} г'
+
+
+class BoughtList(models.Model):
+    """Галочки «куплено» в одному списку покупок людини, яка увійшла. (У гостя вони лежать у сесії браузера.)"""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bought_lists')
+    key = models.CharField(max_length=MAX_LIST_KEY)      # «q:<параметри раціону>» або «plan:<id збереженого>»
+    product_ids = models.JSONField(default=list)        # id куплених продуктів
+    updated_at = models.DateTimeField(auto_now=True)    # за цим забуваємо найстаріші списки
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['user', 'key'], name='unique_bought_list')]
+
+    def __str__(self):
+        return f'{self.user}: {self.key}'
+
+
+class Profile(models.Model):
+    """Збережена ціль людини: з нею відкривається раціон, коли в адресі немає своїх параметрів."""
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
+    period = models.CharField(max_length=10)
+    days = models.PositiveSmallIntegerField()
+    calories = models.IntegerField()
+    protein_pct = models.IntegerField()
+    fat_pct = models.IntegerField()
+    carbs_pct = models.IntegerField()
+
+    def __str__(self):
+        return f'{self.user}: {self.calories} ккал'
+
+    def goal(self):
+        """Ціль у вигляді параметрів адреси (ті самі назви, що в PLAN_KEYS)."""
+        return {
+            'period': self.period, 'days': self.days, 'calories': self.calories,
+            'protein_pct': self.protein_pct, 'fat_pct': self.fat_pct, 'carbs_pct': self.carbs_pct,
+        }

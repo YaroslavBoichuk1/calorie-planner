@@ -2,6 +2,8 @@ import math
 from urllib.parse import urlencode
 
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.http import Http404, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -9,7 +11,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from . import silpo
-from .models import MealPlan, Recipe
+from .models import MAX_LIST_KEY, BoughtList, MealPlan, Profile, Recipe
 from .plans import load_plan_days, save_plan
 from .planner import (
     MIN_DAY_CALORIES, MAX_DAY_CALORIES, WEEK_DAYS,
@@ -40,8 +42,9 @@ PLAN_KEYS = ('period', 'days', 'calories', 'protein_pct', 'fat_pct', 'carbs_pct'
 MAX_SWAPS = 100               # більше замін в адресі не читаємо
 MAX_VARIANT = 999999          # номер варіанта меню («Скласти заново»)
 BOUGHT_KEY = 'bought'         # у сесії: що вже куплено {ключ списку: [id продуктів]}
-MAX_BOUGHT_LISTS = 10         # скільки списків пам'ятаємо; найстаріші забуваємо
-MAX_LIST_KEY = 600            # довший ключ списку не приймаємо
+MAX_BOUGHT_LISTS = 10         # скільки списків гостя пам'ятаємо в сесії; найстаріші забуваємо
+MAX_ACCOUNT_BOUGHT_LISTS = 50 # скільки списків пам'ятаємо в акаунті
+GOAL_KEYS = ('period', 'days', 'calories', 'protein_pct', 'fat_pct', 'carbs_pct')   # те, що зберігається як ціль
 PERIOD_LABELS = {'day': 'День', 'week': 'Тиждень', 'custom': 'Свій'}
 SHORT_DAY_NAMES = {
     'Понеділок': 'Пн', 'Вівторок': 'Вт', 'Середа': 'Ср', 'Четвер': 'Чт',
@@ -294,8 +297,43 @@ def targets_of(choices):
     return choices['protein_pct'], choices['fat_pct'], choices['carbs_pct']
 
 
+def saved_goal_redirect(request):
+    """Людина увійшла, має збережену ціль і відкрила сторінку без параметрів раціону → та сама сторінка з її ціллю.
+
+    Так ціль потрапляє в адресу, і всі посилання (покупки, «Сільпо», збереження) бачать ті самі параметри.
+    """
+    if not request.user.is_authenticated or any(key in request.GET for key in PLAN_KEYS):
+        return None
+    profile = Profile.objects.filter(user=request.user).first()
+    if profile is None:
+        return None
+    query = request.GET.copy()
+    query.update(profile.goal())
+    return redirect(f'{request.path}?{query.urlencode()}')
+
+
+@login_required
+@require_POST
+def goal_save_view(request):
+    """Зберігає ціль у профіль і відкриває раціон з нею. Ціль, з якої раціон не складається, не зберігаємо."""
+    choices = read_choices(request.POST)
+    query = plan_query(request.POST)
+    try:
+        build_plan_days(choices)
+    except ValueError:
+        return redirect(f"{reverse('planner')}?{query}")     # головна сторінка сама покаже, що не так
+    Profile.objects.update_or_create(user=request.user, defaults={
+        'period': choices['period'], 'days': choices['days_count'], 'calories': choices['target_calories'],
+        'protein_pct': choices['protein_pct'], 'fat_pct': choices['fat_pct'], 'carbs_pct': choices['carbs_pct'],
+    })
+    messages.success(request, 'Ціль збережено: з нею раціон відкриватиметься й наступного разу.')
+    return redirect(f"{reverse('planner')}?{query}")
+
+
 def planner_view(request):
     """Головна сторінка «Раціон»: будує раціон за параметрами з адреси й показує вибраний день і страву."""
+    if goal_redirect := saved_goal_redirect(request):
+        return goal_redirect
     choices = read_choices(request.GET)
     base = plan_query(request.GET)
     context = {
@@ -341,6 +379,8 @@ def planner_view(request):
 
 def goal_view(request):
     """Сторінка «Ціль»: період, калорії й пропорція БЖВ. Кнопка відкриває раціон із цими параметрами."""
+    if goal_redirect := saved_goal_redirect(request):
+        return goal_redirect
     choices = read_choices(request.GET)
     presets = [
         {
@@ -383,19 +423,63 @@ def valid_list_key(key):
     return key.startswith('q:') or (key.startswith('plan:') and key[5:].isascii() and key[5:].isdigit())
 
 
-def bought_ids(session, key):
-    """Id продуктів, позначених купленими в цьому списку."""
-    return set(session.get(BOUGHT_KEY, {}).get(key, []))
+def bought_ids(request, key):
+    """Id продуктів, позначених купленими в цьому списку: з акаунта, якщо людина увійшла, інакше із сесії."""
+    if request.user.is_authenticated:
+        row = BoughtList.objects.filter(user=request.user, key=key).first()
+        return set(row.product_ids) if row else set()
+    return set(request.session.get(BOUGHT_KEY, {}).get(key, []))
 
 
-def set_bought(session, key, product_id, bought):
-    """Ставить або знімає галочку «куплено». Пам'ятає лише останні MAX_BOUGHT_LISTS списків."""
+def set_bought(request, key, product_ids, bought):
+    """Ставить або знімає галочки «куплено» для кількох продуктів одного списку."""
+    if request.user.is_authenticated:
+        set_account_bought(request.user, key, product_ids, bought)
+    else:
+        set_session_bought(request.session, key, product_ids, bought)
+
+
+@transaction.atomic
+def set_account_bought(user, key, product_ids, bought):
+    """Галочки в акаунті. Пам'ятає лише останні MAX_ACCOUNT_BOUGHT_LISTS списків."""
+    row = BoughtList.objects.select_for_update().filter(user=user, key=key).first() or BoughtList(user=user, key=key)
+    ids = set(row.product_ids)
+    ids = ids | set(product_ids) if bought else ids - set(product_ids)
+    if ids:
+        row.product_ids = sorted(ids)
+        row.save()                          # updated_at оновлюється: список тепер найсвіжіший
+    elif row.pk:
+        row.delete()
+    stale = BoughtList.objects.filter(user=user).order_by('-updated_at', '-pk').values_list('pk', flat=True)[MAX_ACCOUNT_BOUGHT_LISTS:]
+    BoughtList.objects.filter(pk__in=list(stale)).delete()
+
+
+def clear_bought(request, key):
+    """«Зняти всі галочки» в одному списку."""
+    if request.user.is_authenticated:
+        BoughtList.objects.filter(user=request.user, key=key).delete()
+    else:
+        lists = dict(request.session.get(BOUGHT_KEY, {}))
+        lists.pop(key, None)
+        request.session[BOUGHT_KEY] = lists
+
+
+def move_session_bought(request):
+    """Після входу: галочки, поставлені гостем у цьому браузері, переходять в акаунт (додаються до наявних)."""
+    lists = request.session.pop(BOUGHT_KEY, {})
+    if not isinstance(lists, dict):
+        return
+    for key, ids in list(lists.items())[-MAX_BOUGHT_LISTS:]:
+        clean_ids = [i for i in ids if isinstance(i, int) and 0 < i <= MAX_DB_ID] if isinstance(ids, list) else []
+        if valid_list_key(key) and clean_ids:
+            set_account_bought(request.user, key, clean_ids, True)
+
+
+def set_session_bought(session, key, product_ids, bought):
+    """Галочки гостя в сесії. Пам'ятає лише останні MAX_BOUGHT_LISTS списків."""
     lists = dict(session.get(BOUGHT_KEY, {}))
     ids = set(lists.pop(key, []))
-    if bought:
-        ids.add(product_id)
-    else:
-        ids.discard(product_id)
+    ids = ids | set(product_ids) if bought else ids - set(product_ids)
     if ids:
         lists[key] = sorted(ids)            # пересуваємо список у кінець: він тепер найсвіжіший
     while len(lists) > MAX_BOUGHT_LISTS:
@@ -416,13 +500,11 @@ def shopping_check_view(request):
     key = request.POST.get('list_key', '')
     if valid_list_key(key):
         if request.POST.get('reset'):
-            lists = dict(request.session.get(BOUGHT_KEY, {}))
-            lists.pop(key, None)
-            request.session[BOUGHT_KEY] = lists
+            clear_bought(request, key)
         else:
             product_id = parse_int(request.POST.get('product'), 0)
             if 0 < product_id <= MAX_DB_ID:
-                set_bought(request.session, key, product_id, request.POST.get('bought') == '1')
+                set_bought(request, key, [product_id], request.POST.get('bought') == '1')
     if request.headers.get('X-Requested-With') == 'fetch':
         return JsonResponse({'ok': valid_list_key(key)})
     return redirect(safe_next_url(request))
@@ -430,6 +512,8 @@ def shopping_check_view(request):
 
 def shopping_view(request):
     """Сторінка «Покупки»: список продуктів на весь раціон."""
+    if goal_redirect := saved_goal_redirect(request):
+        return goal_redirect
     choices = read_choices(request.GET)
     context = {**choices, 'period_label': PERIOD_LABELS[choices['period']], 'query': plan_query(request.GET)}
     try:
@@ -440,7 +524,7 @@ def shopping_view(request):
     totals = period_totals(plan_days)
     rows = shopping_rows(plan_days)
     key = list_key_for_query(context['query'])
-    bought_count, total_count = mark_bought(rows, bought_ids(request.session, key))
+    bought_count, total_count = mark_bought(rows, bought_ids(request, key))
     context.update({
         'rows': rows,
         'days_total': len(plan_days),
@@ -454,29 +538,34 @@ def shopping_view(request):
 
 @require_POST
 def plan_save_view(request):
-    """Зберігає показаний раціон у базу й переходить на його сторінку."""
+    """Зберігає показаний раціон в акаунт і переходить на його сторінку. Гостя спершу просимо увійти."""
     query = QueryDict(request.POST.get('query', ''))
+    if not request.user.is_authenticated:
+        back = f"{reverse('planner')}?{plan_query(query)}"
+        return redirect(f"{reverse('login')}?{urlencode({'next': back})}")
     choices = read_choices(query)
     try:
         plan_days = build_plan_days(choices)
     except ValueError:
         # головна сторінка сама покаже, що не так
         return redirect(f"{reverse('planner')}?{query.urlencode()}")
-    plan = save_plan(request.POST.get('name', ''), choices, plan_days)
+    plan = save_plan(request.POST.get('name', ''), choices, plan_days, owner=request.user)
     return redirect('plan_detail', pk=plan.pk)
 
 
+@login_required
 def plan_list_view(request):
-    """Сторінка зі списком збережених раціонів."""
-    plans = MealPlan.objects.prefetch_related('items__product')
+    """Сторінка зі списком збережених раціонів — лише своїх."""
+    plans = MealPlan.objects.filter(owner=request.user).prefetch_related('items__product')
     return render(request, 'nutrition/plan_list.html', {'plans': plans})
 
 
+@login_required
 def plan_detail_view(request, pk):
     """Сторінка одного збереженого раціону: ті самі дні й тарілки, а також список покупок."""
     if pk > MAX_DB_ID:
         raise Http404
-    plan = get_object_or_404(MealPlan, pk=pk)
+    plan = get_object_or_404(MealPlan, pk=pk, owner=request.user)     # чужий раціон — «не знайдено»
     plan_days = load_plan_days(plan)
 
     def link(day_index, meal_index):
@@ -489,7 +578,7 @@ def plan_detail_view(request, pk):
     )
     rows = shopping_rows(plan_days)
     key = list_key_for_plan(plan)
-    bought_count, total_count = mark_bought(rows, bought_ids(request.session, key))
+    bought_count, total_count = mark_bought(rows, bought_ids(request, key))
     return render(request, 'nutrition/plan_detail.html', {
         'plan': plan,
         'view': view,
@@ -499,6 +588,21 @@ def plan_detail_view(request, pk):
         'bought_count': bought_count,
         'total_count': total_count,
     })
+
+
+@login_required
+@require_POST
+def plan_delete_view(request, pk):
+    """Видаляє свій збережений раціон разом із його продуктами й галочками «куплено». Чужий — «не знайдено»."""
+    if pk > MAX_DB_ID:
+        raise Http404
+    plan = get_object_or_404(MealPlan, pk=pk, owner=request.user)
+    name = plan.name
+    with transaction.atomic():
+        BoughtList.objects.filter(user=request.user, key=list_key_for_plan(plan)).delete()
+        plan.delete()                       # рядки PlanItem видаляються разом із ним (CASCADE)
+    messages.success(request, f'Раціон «{name}» видалено.')
+    return redirect('plan_list')
 
 
 def safe_next_url(request):

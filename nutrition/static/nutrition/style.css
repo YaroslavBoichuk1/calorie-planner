@@ -309,6 +309,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* === Збережені раціони === */
 .plan-rows { display: flex; flex-direction: column; gap: 10px; }
+.plan-item { display: flex; align-items: center; gap: 10px; }
+.plan-item .plan-row { flex: 1 1 auto; min-width: 0; }
+.icon-button {
+    flex-shrink: 0; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 16px;
+    background: var(--card); box-shadow: var(--shadow); color: var(--muted-strong);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.icon-danger:hover, .btn-danger:hover { color: #C2410C; }
 .plan-row {
     display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 18px 22px;
     border-radius: 24px; background: var(--card); box-shadow: var(--shadow); text-decoration: none;
@@ -317,6 +325,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .plan-row-name { font-size: 17px; font-weight: 800; overflow-wrap: anywhere; }
 .plan-row-meta { font-size: 13px; font-weight: 600; color: var(--muted); }
 .plan-row-cost { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-weight: 800; }
+@media (max-width: 700px) {
+    /* Вузько: дата й калорії під назвою, а не праворуч від неї */
+    .plan-row { grid-template-columns: minmax(0, 1fr); padding: 16px 18px; }
+    .plan-row-cost { grid-row: auto; grid-column: auto; }
+}
 
 /* === Повідомлення й помилки === */
 .message {

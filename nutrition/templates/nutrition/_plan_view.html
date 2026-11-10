@@ -88,7 +88,10 @@
         <div class="summary-line num"><span>Днів у раціоні</span><span>{{ view.period.days }}</span></div>
         {% endif %}
 
-        {% if show_save %}
+        {% if show_save and not user.is_authenticated %}
+        <!-- Гість: зберігати можна лише в акаунт -->
+        <a class="btn btn-dark" href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}">Увійти, щоб зберегти</a>
+        {% elif show_save %}
         <!-- Зберегти раціон -->
         <form method="post" action="{% url 'plan_save' %}" class="save-plan">
             {% csrf_token %}
