@@ -12,9 +12,11 @@ import math
 import re
 import secrets
 import time
+from datetime import datetime
 from urllib.parse import quote, urlencode
 
 import requests
+from django.utils import timezone
 
 from .models import SilpoClient
 
@@ -30,8 +32,11 @@ REQUEST_TIMEOUT = 20      # секунд на один запит до «Сіл�
 EXPIRY_MARGIN = 60        # оновлюємо токен за стільки секунд до кінця його дії
 SEARCH_BATCH_SIZE = 30    # «Сільпо» приймає до 30 пошуків за один запит
 SEARCH_RESULTS = 30       # скільки товарів дивимось на кожен пошук
-SLOTS_TO_READ = 20        # скільки слотів доставки читаємо, щоб знайти перший вільний
+SLOTS_TO_READ = 20        # скільки слотів доставки читаємо, щоб знайти вільні
+MAX_OFFERS = 6            # скільки варіантів товару показуємо на вибір
+SKIP = 'skip'             # вибір людини: продукт уже є вдома, не купувати
 PRODUCT_URL = 'https://silpo.ua/product/'
+SITE_URL = 'https://silpo.ua/'
 
 # Розмір упаковки в тексті «Сільпо»: 800г, 1кг, 0,5л, 850мл, 10шт, 5*80г
 PACK_PATTERN = re.compile(r'(?:(\d+)\s*[*xх×]\s*)?(\d+(?:[.,]\d+)?)\s*(кг|г|л|мл|шт)')
@@ -39,6 +44,7 @@ PACK_UNITS = {'кг': (1000, 'g'), 'г': (1, 'g'), 'л': (1000, 'g'), 'мл': (1
 
 LOGIN_KEY = 'silpo_login'     # у сесії: дані незавершеного входу
 TOKENS_KEY = 'silpo_tokens'   # у сесії: токени доступу
+ADDED_KEY = 'silpo_added'     # у сесії: які товари застосунок сам додав у кошик {'cart_id', 'products': {id: кількість}}
 
 UNAVAILABLE_MESSAGE = '«Сільпо» зараз не відповідає. Спробуй трохи пізніше.'
 LOGIN_FAILED_MESSAGE = 'Не вдалося підтвердити вхід у «Сільпо». Спробуй ще раз.'
@@ -47,6 +53,17 @@ LOGIN_REQUIRED_MESSAGE = 'Вхід у «Сільпо» застарів. Уві�
 TOO_MANY_REQUESTS_MESSAGE = 'Забагато запитів до «Сільпо». Спробуй за хвилину.'
 NO_STORE_MESSAGE = 'У «Сільпо» не вибрано магазин чи адресу доставки. Вибери їх у застосунку чи на сайті «Сільпо» й спробуй ще раз.'
 NO_SLOTS_MESSAGE = 'У «Сільпо» зараз немає вільних часових слотів для твого способу доставки. Спробуй пізніше.'
+NOTHING_TO_ADD_MESSAGE = 'Немає товарів, які можна додати в кошик.'
+
+# Коди попереджень кошика, які «Сільпо» повертає замість тексту
+VALIDATION_MESSAGES = {
+    'timeslot.not_found': 'Вибраний час доставки вже недоступний. Вибери інший.',
+    'product.offer.stock.max': 'Одного з товарів немає в потрібній кількості.',
+    'order.cost.min': 'Сума товарів менша за мінімальне замовлення для доставки.',
+}
+UNKNOWN_VALIDATION_MESSAGE = '«Сільпо» просить перевірити кошик на своєму сайті'
+# Коди, коли товар власного приготування можна доставити лише в певні години
+TIME_LIMITED_CODES = {'timeslot.cooked_food.limited', 'timeslot.own_cooking.limited'}
 
 
 class SilpoError(Exception):
@@ -194,6 +211,7 @@ def access_token(session):
 def logout(session):
     """Виходить: просить «Сільпо» відкликати токен і забуває його тут, навіть якщо сервер не відповів."""
     session.pop(LOGIN_KEY, None)
+    session.pop(ADDED_KEY, None)
     tokens = session.pop(TOKENS_KEY, None)
     if tokens is None:
         return
@@ -311,7 +329,13 @@ def make_offer(item, product, grams):
     if not item.get('available'):
         return None
 
-    url = PRODUCT_URL + quote(item['slug'])
+    common = {
+        'id': item.get('id'),
+        'company_id': item.get('companyId'),
+        'branch_id': item.get('branchId'),
+        'name': item['name'],
+        'url': PRODUCT_URL + quote(item['slug']),
+    }
     if item.get('weighted'):
         if product.unit == 'pc' or not item.get('step'):
             return None
@@ -319,13 +343,13 @@ def make_offer(item, product, grams):
         if kilograms > item.get('stock', 0):
             return None
         return {
-            'name': item['name'],
-            'url': url,
+            **common,
             'unit_price': item['price'] / 1000,
             'used_cost': item['price'] * grams / 1000,
             'cost': item['price'] * kilograms,
             'price_label': f"{item['price']:.2f} грн за кг",
             'quantity': f'{kilograms:g} кг',
+            'quantity_value': kilograms,
         }
 
     pack = parse_pack(item.get('displayRatio'))
@@ -344,54 +368,113 @@ def make_offer(item, product, grams):
     if packs > item.get('stock', 0):
         return None
     return {
-        'name': item['name'],
-        'url': url,
+        **common,
         'unit_price': item['price'] / pack_size,
         'used_cost': item['price'] * needed / pack_size,
         'cost': item['price'] * packs,
         'price_label': f"{item['price']:.2f} грн за {item['displayRatio']}",
         'quantity': f'{packs} шт',
+        'quantity_value': packs,
     }
 
 
-def best_offer(items, product, query, grams):
-    """Найдешевша за кілограм чи штуку пропозиція серед результатів пошуку, або None, якщо нічого не годиться."""
+def offers_for(items, product, query, grams):
+    """Усі товари з результатів пошуку, що годяться для продукту, від найдешевшого за кілограм чи штуку."""
     offers = []
     for item in items:
         if name_matches(item.get('name', ''), query):
             offer = make_offer(item, product, grams)
             if offer:
                 offers.append(offer)
-    if not offers:
+    return sorted(offers, key=lambda offer: offer['unit_price'])
+
+
+def choose_offer(offers, choice):
+    """Товар, який вибрала людина; якщо вибору нема або товар зник — найдешевший, а якщо «вже є вдома» — None."""
+    if choice == SKIP or not offers:
         return None
-    return min(offers, key=lambda offer: offer['unit_price'])
+    for offer in offers:
+        if offer['id'] == choice:
+            return offer
+    return offers[0]
 
 
-def store_context(connection):
-    """Магазин, спосіб доставки й перший вільний слот із кошика людини. Кошик лише читаємо й нічого в ньому не змінюємо."""
+def parse_moment(text):
+    """Час зі слота → datetime; None, якщо час у незнайомому форматі."""
+    try:
+        return datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def same_moment(first, second):
+    """Чи це той самий момент часу: «Сільпо» може записувати один час по-різному (Z і +00:00)."""
+    first_moment, second_moment = parse_moment(first), parse_moment(second)
+    return first_moment is not None and first_moment == second_moment
+
+
+def slot_label(slot):
+    """Слот доставки для людини: у «Сільпо» час в UTC, а показуємо київський."""
+    start, end = parse_moment(slot['start']), parse_moment(slot['end'])
+    if start is None or end is None:
+        return f"{slot['start']} – {slot['end']}"
+    return f'{timezone.localtime(start):%d.%m, %H:%M}–{timezone.localtime(end):%H:%M}'
+
+
+def slot_is_limited(slot):
+    """Чи діють у цей час обмеження на товари власного приготування й готову їжу."""
+    constraints = slot.get('constraints') or {}
+    return bool(constraints.get('isLimitedCookedFood') or constraints.get('isLimitedOwnCooking'))
+
+
+def store_context(connection, requested_slot=''):
+    """Кошик людини, її магазин і вільні слоти доставки → словник. Лише читає. Вибирає слот: той, що просять, той, що в кошику, або перший вільний."""
     reference = connection.call_tool('silpo_get_my_shopping_cart')
     if not reference.get('exists'):
         raise SilpoError(NO_STORE_MESSAGE)
 
-    cart = connection.call_tool('silpo_get_shopping_cart_by_id', shoppingCartId=reference['shoppingCartId'])['cart']
+    cart_id = reference['shoppingCartId']
+    cart = connection.call_tool('silpo_get_shopping_cart_by_id', shoppingCartId=cart_id)['cart']
     shipments = cart.get('shipments') or []
     branch_id = shipments[0].get('branchId') if shipments else None
     delivery_type = cart.get('deliveryType')
     if not branch_id or not delivery_type:
         raise SilpoError(NO_STORE_MESSAGE)
+    # для експрес-доставки товари й слоти шукаємо як для звичайної
+    search_delivery = 'DeliveryHome' if delivery_type == 'DeliveryExpressByPromise' else delivery_type
 
-    slots = connection.call_tool(
-        'silpo_get_time_slots', branchId=branch_id, deliveryType=delivery_type, limit=SLOTS_TO_READ,
-    ).get('slots', [])
-    for slot in slots:
-        if slot.get('available'):
-            return branch_id, delivery_type, slot
-    raise SilpoError(NO_SLOTS_MESSAGE)
+    slots = [
+        slot for slot in connection.call_tool(
+            'silpo_get_time_slots', branchId=branch_id, deliveryType=search_delivery, limit=SLOTS_TO_READ,
+        ).get('slots', [])
+        if slot.get('available')
+    ]
+    if not slots:
+        raise SilpoError(NO_SLOTS_MESSAGE)
+
+    cart_slot_start = (cart.get('timeslot') or {}).get('start')
+    # типово беремо перший слот без обмежень: у ранні години частину товарів не доставляють
+    chosen = next((slot for slot in slots if not slot_is_limited(slot)), slots[0])
+    for wanted in (cart_slot_start, requested_slot):   # пізніший у циклі важливіший: вибір людини перемагає
+        for slot in slots:
+            if same_moment(slot['start'], wanted):
+                chosen = slot
+    return {
+        'cart_id': cart_id,
+        'cart': cart,
+        'branch_id': branch_id,
+        'company_id': shipments[0].get('companyId'),
+        'delivery_type': search_delivery,
+        'slots': slots,
+        'slot': chosen,
+    }
 
 
-def find_prices(connection, shopping):
+def find_prices(connection, shopping, choices=None, requested_slot=''):
     """Реальні ціни для списку покупок {продукт: грами} цієї людини. Лише читає: нічого не зберігає й не додає в кошик."""
-    branch_id, delivery_type, slot = store_context(connection)
+    choices = choices or {}
+    context = store_context(connection, requested_slot)
+    branch_id, delivery_type, slot = context['branch_id'], context['delivery_type'], context['slot']
 
     needed = {product: grams for product, grams in shopping.items() if grams > 0}
     queries = {product: product.silpo_search or product.name for product in needed}
@@ -414,18 +497,208 @@ def find_prices(connection, shopping):
     rows = []
     for product, grams in needed.items():
         query = queries[product]
+        offers = offers_for(found.get(query, []), product, query, grams)
+        choice = choices.get(product.pk)
+        offer = choose_offer(offers, choice)
+        shown = offers[:MAX_OFFERS]
+        if offer and offer not in shown:
+            shown.append(offer)
         rows.append({
             'product': product,
             'grams': grams,
             'pieces': product.pieces_for(grams),
-            'offer': best_offer(found.get(query, []), product, query, grams),
+            'offers': shown,
+            'offer': offer,
+            'skipped': choice == SKIP,
         })
 
-    offers = [row['offer'] for row in rows if row['offer']]
+    chosen = [row['offer'] for row in rows if row['offer']]
     return {
         'rows': rows,
-        'basket_total': sum(offer['cost'] for offer in offers),
-        'used_total': sum(offer['used_cost'] for offer in offers),
-        'missing': len(rows) - len(offers),
+        'basket_total': sum(offer['cost'] for offer in chosen),
+        'used_total': sum(offer['used_cost'] for offer in chosen),
+        'missing': sum(1 for row in rows if not row['offer'] and not row['skipped']),
         'min_order': slot.get('minOrderCost'),
+        'slots': [{'start': item['start'], 'label': slot_label(item)} for item in context['slots']],
+        'slot_start': slot['start'],
+        'cart_count': len(cart_lines(context['cart'])),
+        'context': context,
+    }
+
+
+def update_slot(connection, context):
+    """Записує в кошик вибраний час доставки. Адресу й магазин передає такими, як вони вже є в кошику."""
+    cart = context['cart']
+    connection.call_tool(
+        'silpo_update_shopping_cart',
+        shoppingCartId=context['cart_id'],
+        deliveryType=cart['deliveryType'],
+        timeslot={'start': context['slot']['start'], 'end': context['slot']['end']},
+        address=cart['address'],
+        shipments=[
+            {'companyId': shipment['companyId'], 'branchId': shipment['branchId']}
+            for shipment in cart['shipments']
+        ],
+    )
+
+
+def cart_lines(cart):
+    """Усі рядки товарів кошика."""
+    lines = []
+    for shipment in cart.get('shipments') or []:
+        lines.extend(shipment.get('products') or [])
+    return lines
+
+
+def same_quantity(first, second):
+    """Чи однакова кількість: дробові кілограми порівнюємо з невеликим запасом."""
+    return first is not None and second is not None and abs(first - second) < 1e-6
+
+
+def build_cart(connection, shopping, choices=None, requested_slot='', added=None):
+    """Збирає кошик людини під вибраний раціон і перевіряє результат → {'problems': [...], 'added': {...}}. Замовлення не оформлює.
+
+    added — товари, які застосунок додав раніше: {'cart_id': ..., 'products': {id товару: кількість}}.
+    Своїм товарам застосунок ставить точну кількість, а ті, яких більше нема у виборі, прибирає.
+    Товари, які людина поклала сама, він лише збільшує до потрібної кількості й ніколи не прибирає.
+    """
+    prices = find_prices(connection, shopping, choices, requested_slot)
+    context = prices['context']
+    cart_id = context['cart_id']
+
+    wanted = {}
+    for row in prices['rows']:
+        offer = row['offer']
+        if offer:
+            line = wanted.setdefault(offer['id'], {'offer': offer, 'quantity': 0})
+            line['quantity'] += offer['quantity_value']
+    if not wanted:
+        raise SilpoError(NOTHING_TO_ADD_MESSAGE)
+
+    # записи про інший кошик не рахуються: тоді всі товари в кошику вважаємо товарами людини
+    previous = (added or {}).get('products', {}) if (added or {}).get('cart_id') == cart_id else {}
+
+    if not same_moment((context['cart'].get('timeslot') or {}).get('start'), context['slot']['start']):
+        update_slot(connection, context)
+
+    in_cart = {line.get('productId'): line for line in cart_lines(context['cart'])}
+    to_add, to_update, to_remove = [], [], []
+    for product_id, line in wanted.items():
+        existing = in_cart.get(product_id)
+        if existing is None:
+            to_add.append({
+                'productId': product_id,
+                'companyId': line['offer']['company_id'] or context['company_id'],
+                'branchId': line['offer']['branch_id'] or context['branch_id'],
+                'quantity': line['quantity'],
+            })
+        elif product_id in previous:
+            if not same_quantity(existing.get('quantity'), line['quantity']):
+                to_update.append({'id': existing['id'], 'quantity': line['quantity']})
+        elif existing.get('quantity', 0) < line['quantity']:
+            to_update.append({'id': existing['id'], 'quantity': line['quantity']})
+    for product_id in previous:
+        if product_id not in wanted and product_id in in_cart:
+            to_remove.append(in_cart[product_id])
+
+    if to_remove:
+        connection.call_tool('silpo_remove_cart_products', shoppingCartId=cart_id,
+                             products=[{'id': line['id']} for line in to_remove])
+    if to_update:
+        connection.call_tool('silpo_update_cart_products', shoppingCartId=cart_id, products=to_update)
+    if to_add:
+        connection.call_tool('silpo_add_cart_products', shoppingCartId=cart_id, products=to_add)
+
+    # «Сільпо» просить завжди перевіряти результат: запит можуть прийняти, але не виконати
+    after = {line.get('productId'): line for line in cart_lines(
+        connection.call_tool('silpo_get_shopping_cart_by_id', shoppingCartId=cart_id)['cart']
+    )}
+    not_added = [wanted[item['productId']]['offer']['name'] for item in to_add if item['productId'] not in after]
+    updated_ids = {item['id']: item['quantity'] for item in to_update}
+    not_updated = [
+        wanted[product_id]['offer']['name'] for product_id, line in in_cart.items()
+        if line['id'] in updated_ids and not same_quantity((after.get(product_id) or {}).get('quantity'), updated_ids[line['id']])
+    ]
+    not_removed = [line.get('name', 'Товар') for line in to_remove if line.get('productId') in after]
+
+    problems = []
+    if not_added:
+        problems.append(f"Не вдалося додати: {', '.join(not_added)}.")
+    if not_updated:
+        problems.append(f"Не вдалося змінити кількість: {', '.join(not_updated)}.")
+    if not_removed:
+        problems.append(f"Не вдалося прибрати старі товари: {', '.join(not_removed)}.")
+
+    managed = {
+        product_id: line['quantity'] for product_id, line in wanted.items()
+        if product_id in after and (product_id in previous or product_id not in in_cart)
+    }
+    return {'problems': problems, 'added': {'cart_id': cart_id, 'products': managed}}
+
+
+def https_only(url):
+    """Посилання для сторінки: показуємо лише https, щоб у href не потрапило нічого іншого."""
+    return url if isinstance(url, str) and url.startswith('https://') else None
+
+
+def problem_text(validation, lines):
+    """Попередження «Сільпо» людською мовою: для обмеження за часом називає товар і години."""
+    code = validation.get('message', '')
+    context = validation.get('context')
+    if code == 'product.offer.stock.max' and isinstance(context, dict):
+        line = next((line for line in lines if line.get('productId') == context.get('productId')), {})
+        name = line.get('name', 'Товар')
+        stock = context.get('stock') or 0
+        if stock <= 0:
+            return f"«{name}» закінчився на вибраний час. Вибери інший товар чи час і збери кошик ще раз."
+        unit = 'кг' if line.get('weighted') else 'шт'
+        return f"«{name}» є лише {stock:g} {unit}, а в кошику більше. Зменш кількість або вибери інший товар."
+    if code in TIME_LIMITED_CODES and isinstance(context, dict):
+        product_ids = context.get('productIds') or []
+        names = ', '.join(line.get('name', 'Товар') for line in lines if line.get('productId') in product_ids)
+        period = context.get('availablePeriod') or {}
+        return (
+            f"Товар «{names}» доставляють лише з {period.get('start')} до {period.get('end')}, а вибраний час "
+            f"починається раніше. Вибери пізніший час або заміни товар на сторінці цін і збери кошик ще раз."
+        )
+    return VALIDATION_MESSAGES.get(code, f'{UNKNOWN_VALIDATION_MESSAGE} ({code}).')
+
+
+def cart_line_view(line):
+    """Рядок кошика для показу: назва, кількість з одиницею, сума й посилання на товар."""
+    quantity = line.get('quantity')
+    unit = 'кг' if line.get('weighted') else 'шт'
+    return {
+        'name': line.get('name') or 'Товар',
+        'quantity': f'{quantity:g} {unit}' if isinstance(quantity, (int, float)) else '',
+        'total': line.get('total'),
+        'url': PRODUCT_URL + quote(line['slug']) if line.get('slug') else None,
+    }
+
+
+def read_cart(connection):
+    """Поточний кошик для показу: товари, сума до сплати, попередження й посилання на оформлення. Лише читає; адресу не повертає."""
+    reference = connection.call_tool('silpo_get_my_shopping_cart')
+    if not reference.get('exists'):
+        raise SilpoError(NO_STORE_MESSAGE)
+    full = connection.call_tool('silpo_get_shopping_cart_by_id', shoppingCartId=reference['shoppingCartId'])
+    cart = full['cart']
+    calculation = cart.get('calculation') or {}
+    lines = cart_lines(cart)
+
+    problems = []
+    for validation in calculation.get('validations') or []:
+        if validation.get('level') in ('error', 'warning'):
+            problems.append(problem_text(validation, lines))
+
+    return {
+        'lines': [cart_line_view(line) for line in lines],
+        'total': calculation.get('totalAfterDiscounts'),
+        'products_total': calculation.get('productsTotal'),
+        'delivery_total': (calculation.get('delivery') or {}).get('total'),
+        'slot': slot_label(cart['timeslot']) if (cart.get('timeslot') or {}).get('start') else None,
+        'problems': list(dict.fromkeys(problems)),   # однакові попередження показуємо один раз
+        'web_link': https_only(full.get('checkoutWebLink')),
+        'mobile_link': https_only(full.get('checkoutMobileLink')),
+        'site_url': SITE_URL,
     }

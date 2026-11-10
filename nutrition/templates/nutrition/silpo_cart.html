@@ -1,0 +1,45 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}Кошик «Сільпо»{% endblock %}
+
+{% block content %}
+<section class="result plan-page">
+    <a class="back-link" href="{{ prices_url }}">← До цін і вибору часу</a>
+    <h1 class="plan-title">Кошик «Сільпо»</h1>
+    <p class="plan-meta">Це весь твій кошик, разом із тим, що вже було в ньому раніше. Замовлення не оформлено: підтвердження й оплата відбуваються лише на сайті чи в застосунку «Сільпо».</p>
+
+    {% for problem in cart.problems %}
+    <div class="message message-error" role="alert">{{ problem }}</div>
+    {% endfor %}
+
+    <ul class="silpo-rows">
+        {% for line in cart.lines %}
+        <li class="silpo-row">
+            <div class="silpo-offer">
+                {% if line.url %}<a class="card-name" href="{{ line.url }}" target="_blank" rel="noopener">{{ line.name }}</a>{% else %}<div class="card-name">{{ line.name }}</div>{% endif %}
+                <div class="plan-meta num">{{ line.quantity }}</div>
+            </div>
+            {% if line.total is not None %}<div class="card-cost-val num">{{ line.total|floatformat:2 }} грн</div>{% endif %}
+        </li>
+        {% empty %}
+        <li class="silpo-row plan-meta">Кошик порожній.</li>
+        {% endfor %}
+    </ul>
+
+    {% if cart.total is not None %}
+    <div class="total">
+        <div>
+            <div class="total-label">До сплати</div>
+            <p class="silpo-text num">{% if cart.products_total is not None %}Товари {{ cart.products_total|floatformat:2 }} грн{% endif %}{% if cart.delivery_total is not None %}, доставка {{ cart.delivery_total|floatformat:2 }} грн{% endif %}{% if cart.slot %}. Час доставки: {{ cart.slot }}{% endif %}.</p>
+        </div>
+        <div class="total-value num">{{ cart.total|floatformat:2 }} грн</div>
+    </div>
+    {% endif %}
+
+    <div class="silpo-actions">
+        {% if cart.web_link %}<a class="btn silpo-btn silpo-link" href="{{ cart.web_link }}" target="_blank" rel="noopener">Оформити на сайті</a>{% endif %}
+        {% if cart.mobile_link %}<a class="btn silpo-btn btn-secondary silpo-link" href="{{ cart.mobile_link }}" target="_blank" rel="noopener">Оформити в застосунку</a>{% endif %}
+        {% if not cart.web_link and not cart.mobile_link %}<a class="btn silpo-btn btn-secondary silpo-link" href="{{ cart.site_url }}" target="_blank" rel="noopener">Відкрити сайт «Сільпо»</a>{% endif %}
+    </div>
+</section>
+{% endblock %}

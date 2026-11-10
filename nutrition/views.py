@@ -1,4 +1,5 @@
 import math
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.http import Http404, QueryDict
@@ -228,15 +229,32 @@ def silpo_callback_view(request):
     return redirect(next_url)
 
 
+def silpo_item_choices(data):
+    """Вибір товарів на сторінці цін з параметрів адреси → {id продукту: id товару або 'skip'}."""
+    choices = {}
+    for key, value in data.items():
+        if key.startswith('item_') and key[len('item_'):].isdecimal():
+            choices[int(key[len('item_'):])] = value
+    return choices
+
+
+def plan_params(data):
+    """Параметри адреси, що описують сам раціон, без вибору товарів і часу доставки."""
+    return [(key, value) for key, value in data.items() if not key.startswith('item_') and key != 'slot']
+
+
 def silpo_prices_view(request):
     """Сторінка реальних цін «Сільпо» для списку покупок раціону. Лише читає дані: кошик не змінює, ціни не зберігає."""
-    back_url = f"{reverse('planner')}?{request.GET.urlencode()}"
+    back_url = f"{reverse('planner')}?{urlencode(plan_params(request.GET))}"
     if not silpo.is_connected(request.session):
         return redirect(back_url)
 
     try:
         plan_days = build_plan_days(read_choices(request.GET))
-        prices = silpo.find_prices(silpo.McpConnection(request.session), shopping_list(plan_days))
+        prices = silpo.find_prices(
+            silpo.McpConnection(request.session), shopping_list(plan_days),
+            silpo_item_choices(request.GET), request.GET.get('slot', ''),
+        )
     except (ValueError, silpo.SilpoError) as error:
         messages.error(request, str(error))
         return redirect(back_url)
@@ -245,7 +263,47 @@ def silpo_prices_view(request):
         'prices': prices,
         'days_count': len(plan_days),
         'back_url': back_url,
+        'plan_params': plan_params(request.GET),
+        'query': request.GET.urlencode(),
     })
+
+
+def add_plan_to_silpo_cart(request):
+    """Натискання «Зібрати кошик»: заново шукає товари зі свіжими цінами й додає їх у кошик людини."""
+    query = QueryDict(request.POST.get('query', ''))
+    prices_url = f"{reverse('silpo_prices')}?{query.urlencode()}"
+    try:
+        plan_days = build_plan_days(read_choices(query))
+        result = silpo.build_cart(
+            silpo.McpConnection(request.session), shopping_list(plan_days),
+            silpo_item_choices(query), query.get('slot', ''), request.session.get(silpo.ADDED_KEY),
+        )
+    except (ValueError, silpo.SilpoError) as error:
+        messages.error(request, str(error))
+        return redirect(prices_url)
+
+    request.session[silpo.ADDED_KEY] = result['added']
+    for problem in result['problems']:
+        messages.warning(request, problem)
+    if not result['problems']:
+        messages.success(request, 'Кошик «Сільпо» зібрано під цей раціон. Замовлення ще не оформлено.')
+    return redirect(f"{reverse('silpo_cart')}?{query.urlencode()}")
+
+
+def silpo_cart_view(request):
+    """Кошик «Сільпо»: POST додає товари раціону, а GET лише показує кошик і посилання на оформлення."""
+    if not silpo.is_connected(request.session):
+        return redirect('planner')
+    if request.method == 'POST':
+        return add_plan_to_silpo_cart(request)
+
+    prices_url = f"{reverse('silpo_prices')}?{request.GET.urlencode()}"
+    try:
+        cart = silpo.read_cart(silpo.McpConnection(request.session))
+    except silpo.SilpoError as error:
+        messages.error(request, str(error))
+        return redirect(prices_url)
+    return render(request, 'nutrition/silpo_cart.html', {'cart': cart, 'prices_url': prices_url})
 
 
 @require_POST

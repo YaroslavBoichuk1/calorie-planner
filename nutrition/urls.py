@@ -10,4 +10,5 @@ urlpatterns = [
     path('silpo/callback/', views.silpo_callback_view, name='silpo_callback'),
     path('silpo/logout/', views.silpo_logout_view, name='silpo_logout'),
     path('silpo/prices/', views.silpo_prices_view, name='silpo_prices'),
+    path('silpo/cart/', views.silpo_cart_view, name='silpo_cart'),
 ]

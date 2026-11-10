@@ -363,6 +363,7 @@ class NoPricesTests(RecipeDataMixin, TestCase):
 def silpo_item(name, price, ratio=None, weighted=False, step=1, stock=10, available=True, slug='slug'):
     """Товар у форматі, який повертає пошук «Сільпо»."""
     return {
+        'id': f'id-{slug}', 'companyId': 'company-1', 'branchId': 'branch-1',
         'name': name, 'slug': slug, 'price': price, 'displayRatio': ratio,
         'weighted': weighted, 'step': step, 'stock': stock, 'available': available,
     }
@@ -430,37 +431,96 @@ class SilpoOfferTests(SimpleTestCase):
         self.assertIsNone(silpo.make_offer(silpo_item('Яйця', 99, '800г'), self.egg, 60))
         self.assertIsNone(silpo.make_offer(silpo_item('Яйця', 99, '100г', weighted=True, step=0.5), self.egg, 60))
 
-    def test_best_offer_is_cheapest_per_kilogram_not_per_pack(self):
+    def test_offers_go_from_cheapest_per_kilogram_not_per_pack(self):
         items = [
             silpo_item('Крупа гречана дрібна', 90, '400г', slug='small'),
             silpo_item('Крупа гречана велика', 144, '1000г', slug='big'),
             silpo_item('Печиво гречане', 10, '500г', slug='other'),
         ]
-        offer = silpo.best_offer(items, self.grechka, 'крупа гречана', 100)
-        self.assertEqual(offer['url'], silpo.PRODUCT_URL + 'big')
+        offers = silpo.offers_for(items, self.grechka, 'крупа гречана', 100)
+        self.assertEqual([offer['id'] for offer in offers], ['id-big', 'id-small'])
 
-    def test_no_match_gives_no_offer(self):
-        self.assertIsNone(silpo.best_offer([silpo_item('Печиво', 10, '500г')], self.grechka, 'крупа гречана', 100))
+    def test_no_match_gives_no_offers(self):
+        self.assertEqual(silpo.offers_for([silpo_item('Печиво', 10, '500г')], self.grechka, 'крупа гречана', 100), [])
+
+    def test_choose_offer(self):
+        offers = [{'id': 'cheap'}, {'id': 'dear'}]
+        self.assertEqual(silpo.choose_offer(offers, None)['id'], 'cheap')
+        self.assertEqual(silpo.choose_offer(offers, 'dear')['id'], 'dear')
+        self.assertEqual(silpo.choose_offer(offers, 'gone')['id'], 'cheap')
+        self.assertIsNone(silpo.choose_offer(offers, silpo.SKIP))
+        self.assertIsNone(silpo.choose_offer([], 'dear'))
+
+    def test_same_moment_understands_both_time_formats(self):
+        self.assertTrue(silpo.same_moment('2026-11-04T18:30:00Z', '2026-11-04T18:30:00+00:00'))
+        self.assertTrue(silpo.same_moment('2026-11-04T20:30:00+02:00', '2026-11-04T18:30:00+00:00'))
+        self.assertFalse(silpo.same_moment('2026-11-04T18:30:00Z', '2026-11-04T19:00:00Z'))
+        self.assertFalse(silpo.same_moment(None, '2026-11-04T19:00:00Z'))
+        self.assertFalse(silpo.same_moment('щось', 'щось'))
+
+    def test_slot_label_shows_kyiv_time(self):
+        label = silpo.slot_label({'start': '2026-11-04T18:30:00+00:00', 'end': '2026-11-04T20:00:00+00:00'})
+        self.assertEqual(label, '04.11, 20:30–22:00')
 
 
 class FakeConnection:
     """Підміна розмови із «Сільпо»: записує виклики й дає заготовлені відповіді."""
 
-    def __init__(self, exists=True, delivery='DeliveryHome', slots=None, products=None):
-        """Заготовлені дані: чи є кошик, спосіб доставки, слоти й товари за пошуками."""
+    def __init__(self, exists=True, delivery='DeliveryHome', slots=None, products=None, lines=None, timeslot=None,
+                 drop_added=False, extra=None, calculation=None, ignore_remove=False):
+        """Заготовлені дані: кошик і його рядки, спосіб доставки, слоти й товари за пошуками."""
         self.calls = []
         self.exists = exists
         self.delivery = delivery
         self.slots = [{'start': 'start-1', 'end': 'end-1', 'available': True, 'minOrderCost': 699}] if slots is None else slots
         self.products = products or {}
+        self.lines = lines or []
+        self.timeslot = timeslot
+        self.drop_added = drop_added   # «Сільпо» може мовчки не додати товар
+        self.ignore_remove = ignore_remove   # …або не прибрати
+        self.extra = extra or {}
+        self.calculation = calculation or {}
+
+    def tool_names(self):
+        """Назви інструментів у порядку викликів."""
+        return [call[0] for call in self.calls]
 
     def call_tool(self, name, **arguments):
-        """Відповідає як сервер і запам'ятовує назву інструмента."""
+        """Відповідає як сервер і запам'ятовує назву інструмента. Незнайомий інструмент — помилка тесту."""
         self.calls.append((name, arguments))
         if name == 'silpo_get_my_shopping_cart':
             return {'success': True, 'exists': self.exists, 'shoppingCartId': 'cart-1' if self.exists else None}
         if name == 'silpo_get_shopping_cart_by_id':
-            return {'success': True, 'cart': {'deliveryType': self.delivery, 'shipments': [{'branchId': 'branch-1'}]}}
+            return {
+                'success': True,
+                **self.extra,
+                'cart': {
+                    'deliveryType': self.delivery,
+                    'timeslot': self.timeslot,
+                    'address': {'addressType': 'flat', 'phone': 'secret-phone', 'latitude': '50.4'},
+                    'calculation': self.calculation,
+                    'shipments': [{'id': 's1', 'branchId': 'branch-1', 'companyId': 'company-1', 'products': self.lines}],
+                },
+            }
+        if name == 'silpo_add_cart_products':
+            if not self.drop_added:
+                for product in arguments['products']:
+                    self.lines.append({'id': f"line-{product['productId']}", 'productId': product['productId'], 'quantity': product['quantity']})
+            return {'success': True}
+        if name == 'silpo_update_cart_products':
+            for change in arguments['products']:
+                for line in self.lines:
+                    if line['id'] == change['id']:
+                        line['quantity'] = change['quantity']
+            return {'success': True}
+        if name == 'silpo_remove_cart_products':
+            if not self.ignore_remove:
+                removed = {product['id'] for product in arguments['products']}
+                self.lines[:] = [line for line in self.lines if line['id'] not in removed]
+            return {'success': True}
+        if name == 'silpo_update_shopping_cart':
+            self.timeslot = arguments['timeslot']
+            return {'success': True}
         if name == 'silpo_get_time_slots':
             return {'success': True, 'slots': self.slots}
         if name == 'silpo_find_products_batch':
@@ -569,6 +629,387 @@ class SilpoPricesTests(TestCase):
         with patch('nutrition.silpo.requests.post') as post:
             self.client.get('/')
         post.assert_not_called()
+
+
+SLOT_ONE = {'start': '2026-11-05T08:00:00+00:00', 'end': '2026-11-05T10:00:00+00:00', 'available': True, 'minOrderCost': 699}
+SLOT_TWO = {'start': '2026-11-05T12:00:00+00:00', 'end': '2026-11-05T14:00:00+00:00', 'available': True, 'minOrderCost': 699}
+SLOT_BUSY = {'start': '2026-11-05T06:00:00+00:00', 'end': '2026-11-05T08:00:00+00:00', 'available': False}
+
+
+class SilpoCartTests(TestCase):
+    """Вибір товарів, час доставки й додавання в кошик."""
+
+    def setUp(self):
+        """Гречка й куряче філе та страва, яка їх використовує."""
+        self.grechka = Product.objects.create(
+            name='гречка', calories=343, proteins=13, fats=3.4, carbs=71.5, silpo_search='крупа гречана',
+        )
+        self.chicken = Product.objects.create(
+            name='філе', calories=120, proteins=22.5, fats=2.6, carbs=0, silpo_search='куряче філе',
+        )
+        recipe = Recipe.objects.create(name='Гречка з куркою')
+        RecipeIngredient.objects.create(recipe=recipe, product=self.grechka, grams=80)
+        RecipeIngredient.objects.create(recipe=recipe, product=self.chicken, grams=150)
+        self.search = {
+            'крупа гречана': [
+                silpo_item('Крупа гречана дорога', 200, '1кг', slug='dear'),
+                silpo_item('Крупа гречана дешева', 100, '1кг', slug='cheap'),
+            ],
+            'куряче філе': [silpo_item('Куряче філе', 189, '100г', weighted=True, step=0.5, slug='chicken')],
+        }
+
+    def connection(self, **kwargs):
+        """Розмова із заготовленими товарами й двома вільними слотами."""
+        kwargs.setdefault('slots', [SLOT_BUSY, SLOT_ONE, SLOT_TWO])
+        kwargs.setdefault('timeslot', {'start': SLOT_ONE['start'], 'end': SLOT_ONE['end']})
+        return FakeConnection(products=self.search, **kwargs)
+
+    def shopping(self):
+        """Список покупок: 500 г гречки й 300 г філе."""
+        return {self.grechka: 500, self.chicken: 300}
+
+    def test_cheapest_item_is_chosen_by_default(self):
+        prices = silpo.find_prices(self.connection(), self.shopping())
+        self.assertEqual(prices['rows'][0]['offer']['id'], 'id-cheap')
+        self.assertEqual([offer['id'] for offer in prices['rows'][0]['offers']], ['id-cheap', 'id-dear'])
+        self.assertEqual(prices['basket_total'], 100 + 189 * 0.5)
+
+    def test_person_can_replace_an_item(self):
+        prices = silpo.find_prices(self.connection(), self.shopping(), {self.grechka.pk: 'id-dear'})
+        self.assertEqual(prices['rows'][0]['offer']['id'], 'id-dear')
+        self.assertEqual(prices['basket_total'], 200 + 189 * 0.5)
+
+    def test_skipped_product_is_left_out_of_totals(self):
+        prices = silpo.find_prices(self.connection(), self.shopping(), {self.grechka.pk: silpo.SKIP})
+        self.assertTrue(prices['rows'][0]['skipped'])
+        self.assertIsNone(prices['rows'][0]['offer'])
+        self.assertEqual(prices['basket_total'], 189 * 0.5)
+        self.assertEqual(prices['missing'], 0)
+
+    def test_chosen_item_stays_in_the_list_even_when_it_is_not_among_the_cheapest(self):
+        self.search['крупа гречана'] = [
+            silpo_item(f'Крупа гречана {index}', 100 + index, '1кг', slug=f's{index}') for index in range(silpo.MAX_OFFERS + 3)
+        ]
+        expensive = f's{silpo.MAX_OFFERS + 2}'
+        prices = silpo.find_prices(self.connection(), self.shopping(), {self.grechka.pk: f'id-{expensive}'})
+        self.assertEqual(len(prices['rows'][0]['offers']), silpo.MAX_OFFERS + 1)
+        self.assertEqual(prices['rows'][0]['offer']['id'], f'id-{expensive}')
+
+    def test_slot_comes_from_cart_when_it_is_still_free(self):
+        prices = silpo.find_prices(self.connection(timeslot={'start': SLOT_TWO['start'], 'end': SLOT_TWO['end']}), self.shopping())
+        self.assertEqual(prices['slot_start'], SLOT_TWO['start'])
+
+    def test_stale_cart_slot_falls_back_to_first_free(self):
+        prices = silpo.find_prices(self.connection(timeslot={'start': '2020-01-01T00:00:00Z', 'end': '2020-01-01T02:00:00Z'}), self.shopping())
+        self.assertEqual(prices['slot_start'], SLOT_ONE['start'])
+        self.assertEqual([slot['start'] for slot in prices['slots']], [SLOT_ONE['start'], SLOT_TWO['start']])
+
+    def test_default_slot_avoids_limited_hours_but_person_can_still_choose_them(self):
+        limited = {**SLOT_ONE, 'constraints': {'isLimitedCookedFood': True, 'isLimitedOwnCooking': True}}
+        free = {**SLOT_TWO, 'constraints': {'isLimitedCookedFood': False, 'isLimitedOwnCooking': False}}
+        stale = {'start': '2020-01-01T00:00:00Z', 'end': '2020-01-01T02:00:00Z'}
+        connection = self.connection(slots=[limited, free], timeslot=stale)
+        self.assertEqual(silpo.find_prices(connection, self.shopping())['slot_start'], free['start'])
+        self.assertEqual(silpo.find_prices(connection, self.shopping(), requested_slot=limited['start'])['slot_start'], limited['start'])
+        only_limited = self.connection(slots=[limited], timeslot=stale)
+        self.assertEqual(silpo.find_prices(only_limited, self.shopping())['slot_start'], limited['start'])
+
+    def test_person_can_choose_a_slot_and_a_busy_one_is_ignored(self):
+        self.assertEqual(silpo.find_prices(self.connection(), self.shopping(), requested_slot=SLOT_TWO['start'])['slot_start'], SLOT_TWO['start'])
+        self.assertEqual(silpo.find_prices(self.connection(), self.shopping(), requested_slot=SLOT_BUSY['start'])['slot_start'], SLOT_ONE['start'])
+
+    def calls_of(self, connection, name):
+        """Аргументи всіх викликів інструмента з цією назвою."""
+        return [arguments for tool, arguments in connection.calls if tool == name]
+
+    def test_cart_gets_new_products_and_result_is_checked(self):
+        connection = self.connection()
+        result = silpo.build_cart(connection, self.shopping())
+        self.assertEqual(result['problems'], [])
+        self.assertEqual(result['added'], {'cart_id': 'cart-1', 'products': {'id-cheap': 1, 'id-chicken': 0.5}})
+        add = self.calls_of(connection, 'silpo_add_cart_products')[0]
+        self.assertEqual(add['shoppingCartId'], 'cart-1')
+        self.assertEqual(add['products'], [
+            {'productId': 'id-cheap', 'companyId': 'company-1', 'branchId': 'branch-1', 'quantity': 1},
+            {'productId': 'id-chicken', 'companyId': 'company-1', 'branchId': 'branch-1', 'quantity': 0.5},
+        ])
+        self.assertEqual(connection.tool_names()[-1], 'silpo_get_shopping_cart_by_id')
+
+    def test_cart_uses_person_choices(self):
+        connection = self.connection()
+        silpo.build_cart(connection, self.shopping(), {self.grechka.pk: 'id-dear', self.chicken.pk: silpo.SKIP})
+        add = self.calls_of(connection, 'silpo_add_cart_products')[0]
+        self.assertEqual([product['productId'] for product in add['products']], ['id-dear'])
+
+    def test_silently_dropped_product_is_reported_and_not_remembered(self):
+        result = silpo.build_cart(self.connection(drop_added=True), self.shopping())
+        self.assertEqual(result['problems'], ['Не вдалося додати: Крупа гречана дешева, Куряче філе.'])
+        self.assertEqual(result['added']['products'], {})
+
+    def test_person_item_is_raised_to_needed_amount_but_stays_theirs(self):
+        connection = self.connection(lines=[{'id': 'line-1', 'productId': 'id-chicken', 'quantity': 0.25}])
+        result = silpo.build_cart(connection, self.shopping())
+        self.assertEqual(self.calls_of(connection, 'silpo_update_cart_products')[0]['products'], [{'id': 'line-1', 'quantity': 0.5}])
+        self.assertEqual([product['productId'] for product in self.calls_of(connection, 'silpo_add_cart_products')[0]['products']], ['id-cheap'])
+        self.assertEqual(result['added']['products'], {'id-cheap': 1})
+
+    def test_larger_amount_of_person_item_is_not_reduced(self):
+        connection = self.connection(lines=[
+            {'id': 'line-1', 'productId': 'id-chicken', 'quantity': 3},
+            {'id': 'line-2', 'productId': 'id-cheap', 'quantity': 2},
+        ])
+        silpo.build_cart(connection, self.shopping())
+        self.assertNotIn('silpo_update_cart_products', connection.tool_names())
+        self.assertNotIn('silpo_add_cart_products', connection.tool_names())
+
+    def test_second_click_with_same_choice_changes_nothing(self):
+        connection = self.connection()
+        first = silpo.build_cart(connection, self.shopping())
+        lines_after_first = [dict(line) for line in connection.lines]
+        second = silpo.build_cart(connection, self.shopping(), added=first['added'])
+        self.assertEqual(connection.lines, lines_after_first)
+        self.assertEqual(second['added'], first['added'])
+        self.assertNotIn('silpo_remove_cart_products', connection.tool_names())
+
+    def test_new_choice_replaces_items_the_app_added_before(self):
+        connection = self.connection()
+        first = silpo.build_cart(connection, self.shopping())
+        result = silpo.build_cart(connection, self.shopping(), {self.grechka.pk: 'id-dear'}, added=first['added'])
+        self.assertEqual(self.calls_of(connection, 'silpo_remove_cart_products'), [{'shoppingCartId': 'cart-1', 'products': [{'id': 'line-id-cheap'}]}])
+        self.assertEqual(sorted(line['productId'] for line in connection.lines), ['id-chicken', 'id-dear'])
+        self.assertEqual(result['added']['products'], {'id-dear': 1, 'id-chicken': 0.5})
+
+    def test_app_items_get_exact_amount_even_when_smaller(self):
+        connection = self.connection()
+        first = silpo.build_cart(connection, {self.chicken: 1200})
+        self.assertEqual(connection.lines[0]['quantity'], 1.5)
+        silpo.build_cart(connection, {self.chicken: 300}, added=first['added'])
+        self.assertEqual(connection.lines[0]['quantity'], 0.5)
+
+    def test_skipping_a_product_removes_what_the_app_added_for_it(self):
+        connection = self.connection()
+        first = silpo.build_cart(connection, self.shopping())
+        silpo.build_cart(connection, self.shopping(), {self.grechka.pk: silpo.SKIP}, added=first['added'])
+        self.assertEqual([line['productId'] for line in connection.lines], ['id-chicken'])
+
+    def test_person_items_are_never_removed(self):
+        connection = self.connection(lines=[{'id': 'own', 'productId': 'id-milk', 'name': 'Молоко', 'quantity': 1}])
+        first = silpo.build_cart(connection, self.shopping())
+        silpo.build_cart(connection, self.shopping(), {self.grechka.pk: 'id-dear'}, added=first['added'])
+        self.assertIn('id-milk', [line['productId'] for line in connection.lines])
+        removed = [product['id'] for call in self.calls_of(connection, 'silpo_remove_cart_products') for product in call['products']]
+        self.assertNotIn('own', removed)
+
+    def test_record_about_another_cart_is_ignored(self):
+        connection = self.connection(lines=[{'id': 'line-1', 'productId': 'id-cheap', 'name': 'Крупа', 'quantity': 3}])
+        silpo.build_cart(connection, {self.chicken: 300}, added={'cart_id': 'old-cart', 'products': {'id-cheap': 3}})
+        self.assertNotIn('silpo_remove_cart_products', connection.tool_names())
+
+    def test_failed_removal_is_reported(self):
+        connection = self.connection(ignore_remove=True)
+        first = silpo.build_cart(connection, self.shopping())
+        connection.lines[0]['name'] = 'Крупа гречана дешева'
+        result = silpo.build_cart(connection, self.shopping(), {self.grechka.pk: 'id-dear'}, added=first['added'])
+        self.assertEqual(result['problems'], ['Не вдалося прибрати старі товари: Крупа гречана дешева.'])
+
+    def test_stock_problem_names_the_item(self):
+        connection = self.connection(
+            lines=[
+                {'id': 'a', 'productId': 'gone', 'name': 'Рис Trapeza', 'quantity': 1, 'weighted': False},
+                {'id': 'b', 'productId': 'few', 'name': 'Куряче філе', 'quantity': 2, 'weighted': True},
+            ],
+            calculation={'validations': [
+                {'level': 'error', 'type': 'product', 'message': 'product.offer.stock.max', 'context': {'productId': 'gone', 'stock': 0}},
+                {'level': 'error', 'type': 'product', 'message': 'product.offer.stock.max', 'context': {'productId': 'few', 'stock': 1.5}},
+            ]},
+        )
+        problems = silpo.read_cart(connection)['problems']
+        self.assertIn('«Рис Trapeza» закінчився на вибраний час', problems[0])
+        self.assertIn('«Куряче філе» є лише 1.5 кг', problems[1])
+
+    def test_same_item_for_two_products_is_summed(self):
+        self.search['куряче філе'] = [silpo_item('Куряче філе', 189, '1кг', slug='same')]
+        self.search['крупа гречана'] = [silpo_item('Крупа гречана', 100, '1кг', slug='same')]
+        connection = self.connection()
+        silpo.build_cart(connection, self.shopping())
+        add = [call for call in connection.calls if call[0] == 'silpo_add_cart_products'][0][1]
+        self.assertEqual(add['products'], [{'productId': 'id-same', 'companyId': 'company-1', 'branchId': 'branch-1', 'quantity': 2}])
+
+    def test_stale_slot_is_updated_first_with_address_from_cart(self):
+        connection = self.connection(timeslot={'start': '2020-01-01T00:00:00Z', 'end': '2020-01-01T02:00:00Z'})
+        silpo.build_cart(connection, self.shopping(), requested_slot=SLOT_TWO['start'])
+        names = connection.tool_names()
+        self.assertLess(names.index('silpo_update_shopping_cart'), names.index('silpo_add_cart_products'))
+        update = connection.calls[names.index('silpo_update_shopping_cart')][1]
+        self.assertEqual(update['timeslot'], {'start': SLOT_TWO['start'], 'end': SLOT_TWO['end']})
+        self.assertEqual(update['deliveryType'], 'DeliveryHome')
+        self.assertEqual(update['address']['phone'], 'secret-phone')
+        self.assertEqual(update['shipments'], [{'companyId': 'company-1', 'branchId': 'branch-1'}])
+
+    def test_valid_slot_is_not_touched(self):
+        connection = self.connection()
+        silpo.build_cart(connection, self.shopping())
+        self.assertNotIn('silpo_update_shopping_cart', connection.tool_names())
+
+    def test_nothing_to_add_changes_nothing(self):
+        connection = self.connection(timeslot={'start': '2020-01-01T00:00:00Z', 'end': '2020-01-01T02:00:00Z'})
+        with self.assertRaisesMessage(silpo.SilpoError, silpo.NOTHING_TO_ADD_MESSAGE):
+            silpo.build_cart(connection, self.shopping(), {self.grechka.pk: silpo.SKIP, self.chicken.pk: silpo.SKIP})
+        self.assertFalse(set(connection.tool_names()) & {
+            'silpo_add_cart_products', 'silpo_update_cart_products', 'silpo_update_shopping_cart',
+        })
+
+    def test_read_cart_shows_only_what_page_needs(self):
+        connection = self.connection(
+            lines=[
+                {'id': 'l', 'productId': 'p', 'name': 'Крупа', 'quantity': 2, 'weighted': False, 'total': 198, 'slug': 'krupa'},
+                {'id': 'm', 'productId': 'q', 'name': 'Томат', 'quantity': 0.75, 'weighted': True, 'total': 72.74},
+            ],
+            calculation={'total': 500, 'totalAfterDiscounts': 450, 'productsTotal': 449, 'delivery': {'total': 1}, 'validations': [
+                {'level': 'error', 'type': 'timeslot', 'message': 'timeslot.not_found', 'context': []},
+                {'level': 'warning', 'type': 'x', 'message': 'new.code', 'context': []},
+                {'level': 'info', 'type': 'order', 'message': 'order.payment_types.disabled', 'context': {}},
+            ]},
+            extra={'checkoutWebLink': 'https://silpo.ua/checkout/1', 'checkoutMobileLink': 'javascript:alert(1)'},
+        )
+        cart = silpo.read_cart(connection)
+        self.assertEqual(cart['total'], 450)
+        self.assertEqual(cart['products_total'], 449)
+        self.assertEqual(cart['delivery_total'], 1)
+        self.assertEqual(cart['slot'], silpo.slot_label(SLOT_ONE))
+        self.assertEqual(cart['lines'], [
+            {'name': 'Крупа', 'quantity': '2 шт', 'total': 198, 'url': silpo.PRODUCT_URL + 'krupa'},
+            {'name': 'Томат', 'quantity': '0.75 кг', 'total': 72.74, 'url': None},
+        ])
+        self.assertEqual(cart['problems'], [
+            silpo.VALIDATION_MESSAGES['timeslot.not_found'],
+            f'{silpo.UNKNOWN_VALIDATION_MESSAGE} (new.code).',
+        ])
+        self.assertEqual(cart['web_link'], 'https://silpo.ua/checkout/1')
+        self.assertIsNone(cart['mobile_link'])
+        self.assertNotIn('secret-phone', str(cart))
+
+    def test_time_limit_problem_names_the_item_and_hours_once(self):
+        context = {'productIds': ['salted'], 'availablePeriod': {'start': '10:30', 'end': '22:01'}}
+        connection = self.connection(
+            lines=[
+                {'id': 'a', 'productId': 'salted', 'name': 'Огірок солоний', 'quantity': 0.2, 'weighted': True},
+                {'id': 'b', 'productId': 'other', 'name': 'Морква', 'quantity': 0.5, 'weighted': True},
+            ],
+            calculation={'validations': [
+                {'level': 'error', 'type': 'timeslot', 'message': 'timeslot.cooked_food.limited', 'context': context},
+                {'level': 'error', 'type': 'timeslot', 'message': 'timeslot.own_cooking.limited', 'context': context},
+            ]},
+        )
+        problems = silpo.read_cart(connection)['problems']
+        self.assertEqual(len(problems), 1)
+        self.assertIn('Огірок солоний', problems[0])
+        self.assertIn('з 10:30 до 22:01', problems[0])
+        self.assertNotIn('Морква', problems[0])
+
+    def test_time_limit_problem_with_empty_context_still_gives_message(self):
+        connection = self.connection(calculation={'validations': [
+            {'level': 'error', 'type': 'timeslot', 'message': 'timeslot.cooked_food.limited', 'context': []},
+        ]})
+        self.assertEqual(
+            silpo.read_cart(connection)['problems'],
+            [f'{silpo.UNKNOWN_VALIDATION_MESSAGE} (timeslot.cooked_food.limited).'],
+        )
+
+    def connect_browser(self):
+        """Позначає цей браузер як підключений до «Сільпо»."""
+        session = self.client.session
+        silpo.save_tokens(session, TOKENS, 'client-1')
+        session.save()
+
+    def test_prices_page_offers_choices_and_only_reads(self):
+        self.connect_browser()
+        connection = self.connection()
+        with patch('nutrition.views.silpo.McpConnection', return_value=connection):
+            response = self.client.get(reverse('silpo_prices'), {
+                'period': 'week', f'item_{self.grechka.pk}': 'id-dear', 'slot': SLOT_TWO['start'],
+            })
+        self.assertContains(response, f'name="item_{self.grechka.pk}"')
+        self.assertContains(response, 'value="id-dear" selected')
+        self.assertContains(response, 'Не купувати: вже є вдома')
+        self.assertContains(response, 'name="period" value="week"')
+        self.assertContains(response, 'Зібрати кошик у «Сільпо»')
+        self.assertContains(response, 'href="/?period=week"')
+        self.assertFalse(set(connection.tool_names()) & {
+            'silpo_add_cart_products', 'silpo_update_cart_products', 'silpo_update_shopping_cart',
+        })
+
+    def test_cart_button_needs_login(self):
+        with patch('nutrition.views.silpo.McpConnection') as connection:
+            response = self.client.post(reverse('silpo_cart'), {'query': ''})
+        self.assertRedirects(response, '/', fetch_redirect_response=False)
+        connection.assert_not_called()
+
+    def test_cart_button_needs_csrf_token(self):
+        guarded = self.client_class(enforce_csrf_checks=True)
+        self.assertEqual(guarded.post(reverse('silpo_cart'), {'query': ''}).status_code, 403)
+
+    def test_cart_button_adds_chosen_items_and_shows_cart(self):
+        self.connect_browser()
+        connection = self.connection(
+            extra={'checkoutWebLink': 'https://silpo.ua/checkout/1'},
+            calculation={'totalAfterDiscounts': 321},
+        )
+        query = f'period=week&item_{self.grechka.pk}=id-dear&slot={SLOT_ONE["start"].replace("+", "%2B")}'
+        with patch('nutrition.views.silpo.McpConnection', return_value=connection):
+            response = self.client.post(reverse('silpo_cart'), {'query': query}, follow=True)
+        add = [call for call in connection.calls if call[0] == 'silpo_add_cart_products'][0][1]
+        self.assertIn('id-dear', [product['productId'] for product in add['products']])
+        self.assertContains(response, 'Кошик «Сільпо» зібрано')
+        self.assertContains(response, 'Оформити на сайті')
+        self.assertContains(response, '321.00 грн')
+        self.assertNotContains(response, 'secret-phone')
+        self.assertNotContains(response, 'access-secret')
+        self.assertEqual(sorted(self.client.session[silpo.ADDED_KEY]['products']), ['id-chicken', 'id-dear'])
+
+        # другий раз з іншим вибором: старий товар застосунку прибирається, а не лишається поруч
+        query = f'period=week&slot={SLOT_ONE["start"].replace("+", "%2B")}'
+        with patch('nutrition.views.silpo.McpConnection', return_value=connection):
+            self.client.post(reverse('silpo_cart'), {'query': query})
+        self.assertEqual(sorted(line['productId'] for line in connection.lines), ['id-cheap', 'id-chicken'])
+
+    def test_prices_page_says_how_many_items_are_already_in_cart(self):
+        self.connect_browser()
+        connection = self.connection(lines=[{'id': 'own', 'productId': 'id-milk', 'name': 'Молоко', 'quantity': 1}])
+        with patch('nutrition.views.silpo.McpConnection', return_value=connection):
+            response = self.client.get(reverse('silpo_prices'))
+        self.assertContains(response, 'Зараз у кошику товарів: 1')
+
+    def test_logout_forgets_what_the_app_added(self):
+        self.connect_browser()
+        session = self.client.session
+        session[silpo.ADDED_KEY] = {'cart_id': 'cart-1', 'products': {'id-cheap': 1}}
+        session.save()
+        with patch('nutrition.silpo.requests.post'):
+            self.client.post(reverse('silpo_logout'), {'next': '/'})
+        self.assertNotIn(silpo.ADDED_KEY, self.client.session)
+
+    def test_cart_button_reports_silpo_errors_on_prices_page(self):
+        self.connect_browser()
+        with patch('nutrition.views.silpo.McpConnection', side_effect=silpo.SilpoError(silpo.UNAVAILABLE_MESSAGE)):
+            response = self.client.post(reverse('silpo_cart'), {'query': 'period=week'})
+        self.assertRedirects(response, f"{reverse('silpo_prices')}?period=week", fetch_redirect_response=False)
+
+    def test_cart_page_needs_login_and_handles_empty_cart(self):
+        self.assertRedirects(self.client.get(reverse('silpo_cart')), '/', fetch_redirect_response=False)
+        self.connect_browser()
+        connection = self.connection(calculation={'totalAfterDiscounts': 99, 'validations': [
+            {'level': 'error', 'type': 'order', 'message': 'order.cost.min', 'context': {}},
+        ]})
+        with patch('nutrition.views.silpo.McpConnection', return_value=connection):
+            response = self.client.get(reverse('silpo_cart'))
+        self.assertContains(response, 'Кошик порожній')
+        self.assertContains(response, 'Відкрити сайт «Сільпо»')
+        self.assertContains(response, 'менша за мінімальне замовлення')
+
+    def test_strange_item_keys_are_ignored(self):
+        from nutrition.views import silpo_item_choices
+        self.assertEqual(silpo_item_choices({'item_5': 'a', 'item_abc': 'b', 'item_²': 'c', 'other': 'd'}), {5: 'a'})
 
 
 class McpConnectionTests(SimpleTestCase):
