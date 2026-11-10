@@ -3,10 +3,19 @@
 {% block title %}{{ plan.name }}{% endblock %}
 
 {% block content %}
-<section class="result plan-page">
-    <a class="back-link" href="{% url 'plan_list' %}">← Усі раціони</a>
-    <h1 class="plan-title">{{ plan.name }}</h1>
-    <p class="plan-meta num">Збережено {{ plan.created_at|date:"d.m.Y H:i" }} · днів: {{ plan.days_count }} · {{ plan.calories }} ккал на день.{% if totals.cost is not None %} Вартість — за поточними цінами.{% endif %}</p>
-    {% include 'nutrition/_result.html' %}
+<a class="back-link" href="{% url 'plan_list' %}">← Усі раціони</a>
+<header class="page-head">
+    <div>
+        <div class="eyebrow num">Збережено {{ plan.created_at|date:"d.m.Y H:i" }} · днів: {{ plan.days_count }} · {{ plan.calories }} ккал на день{% if cost is not None %} · вартість за поточними цінами{% endif %}</div>
+        <h1 class="page-title">{{ plan.name }}</h1>
+    </div>
+</header>
+
+{% include 'nutrition/_plan_view.html' %}
+
+<section class="panel" aria-label="Список покупок">
+    <h2 class="panel-title">Список покупок</h2>
+    {% include 'nutrition/_shopping_list.html' %}
+    {% if cost is not None %}<div class="summary-line"><span>Разом</span><span class="num summary-strong">{{ cost|floatformat:2 }} грн</span></div>{% endif %}
 </section>
 {% endblock %}

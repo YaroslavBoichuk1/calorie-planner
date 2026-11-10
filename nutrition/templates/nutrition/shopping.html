@@ -1,0 +1,38 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}Покупки{% endblock %}
+
+{% block content %}
+<header class="page-head">
+    <div>
+        <div class="eyebrow num">{{ period_label }}{% if days_total %} · днів: {{ days_total }}{% endif %}{% if rows %} · продуктів: {{ rows|length }}{% endif %}</div>
+        <h1 class="page-title">Покупки</h1>
+    </div>
+    {% if silpo_connected and not error %}<a class="btn btn-accent" href="{% url 'silpo_prices' %}?{{ query }}">Показати ціни в «Сільпо»</a>{% endif %}
+</header>
+
+{% if error %}
+<div class="error" role="alert">
+    <div class="error-title">Не вдалося скласти раціон</div>
+    <div class="error-text">{{ error }}</div>
+    <a class="btn btn-dark btn-small" href="{% url 'goal' %}?{{ query }}">Змінити ціль</a>
+</div>
+{% else %}
+<div class="plan-grid">
+    <section class="panel plan-main" aria-label="Список продуктів">
+        <h2 class="panel-title">Список покупок</h2>
+        {% include 'nutrition/_shopping_list.html' %}
+    </section>
+    <aside class="panel panel-dark summary" aria-label="Ціни">
+        {% if cost is not None %}
+        <div class="eyebrow eyebrow-dark">Вартість</div>
+        <div class="dark-number num">{{ cost|floatformat:2 }} грн</div>
+        {% else %}
+        <div class="eyebrow eyebrow-dark">Ціни</div>
+        <p class="dark-note">Реальні ціни твого магазину й готовий кошик — через акаунт «Сільпо».</p>
+        {% endif %}
+        <div class="silpo-dark">{% include 'nutrition/_silpo.html' %}</div>
+    </aside>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,16 @@
+<a class="nav-link{% if current == 'planner' %} is-active{% endif %}" href="{% url 'planner' %}?{{ plan_query }}"{% if current == 'planner' %} aria-current="page"{% endif %}>
+    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="13" rx="3"></rect><path d="M3 8h14M7 2.5v3M13 2.5v3"></path></svg>
+    <span>Раціон</span>
+</a>
+<a class="nav-link{% if current == 'shopping' or current == 'silpo_prices' or current == 'silpo_cart' %} is-active{% endif %}" href="{% url 'shopping' %}?{{ plan_query }}"{% if current == 'shopping' %} aria-current="page"{% endif %}>
+    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h12l-1 10H5L4 7zM7.5 7V5.5a2.5 2.5 0 0 1 5 0V7"></path></svg>
+    <span>Покупки</span>
+</a>
+<a class="nav-link{% if current == 'goal' %} is-active{% endif %}" href="{% url 'goal' %}?{{ plan_query }}"{% if current == 'goal' %} aria-current="page"{% endif %}>
+    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7"></circle><circle cx="10" cy="10" r="2.5"></circle></svg>
+    <span>Ціль</span>
+</a>
+<a class="nav-link{% if current == 'plan_list' or current == 'plan_detail' %} is-active{% endif %}" href="{% url 'plan_list' %}"{% if current == 'plan_list' %} aria-current="page"{% endif %}>
+    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8a1 1 0 0 1 1 1v13l-5-3-5 3V4a1 1 0 0 1 1-1z"></path></svg>
+    <span>Збережені</span>
+</a>

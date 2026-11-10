@@ -1,6 +1,6 @@
 import math
 
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 
 # Create your models here.
@@ -19,6 +19,9 @@ class Product(models.Model):
     grams_per_piece = models.FloatField(null=True, blank=True)
     silpo_search = models.CharField('Пошук у «Сільпо»', max_length=100, blank=True)   # якщо порожньо — шукаємо за назвою
     fdc_id = models.PositiveIntegerField('USDA FDC ID', null=True, blank=True)        # звідки взято БЖВ (USDA FoodData Central)
+    color = models.CharField(                                                          # колір на тарілці й у списку покупок
+        'Колір', max_length=7, blank=True, validators=[RegexValidator(r'^#[0-9A-Fa-f]{6}$', 'Колір у форматі #A1B2C3.')],
+    )
 
     def __str__(self):
         """Назва продукту — так він показується в адмінці й списках."""

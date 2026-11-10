@@ -1,6 +1,0 @@
-{% for day_info in days %}
-<details class="week-day" {% if forloop.first %}open{% endif %}>
-    <summary>{{ day_info.name }}</summary>
-    {% include 'nutrition/_day.html' with day=day_info.day %}
-</details>
-{% endfor %}

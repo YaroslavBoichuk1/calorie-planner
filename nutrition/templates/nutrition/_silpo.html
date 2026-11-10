@@ -1,27 +1,21 @@
 <!-- Підключення акаунта «Сільпо» -->
-<div class="silpo">
+<div class="silpo-card">
     {% if silpo_connected %}
-    <div class="silpo-info">
-        <div class="meal-name">«Сільпо» підключено</div>
-        <p class="silpo-text">Ціни для цього списку покупок і твого магазину. Кошик зміниться, лише якщо натиснеш «Зібрати кошик» на наступній сторінці.</p>
-    </div>
-    <div class="silpo-actions">
-        <a class="btn silpo-btn silpo-link" href="{% url 'silpo_prices' %}?{{ query }}">Показати ціни</a>
-        <form method="post" action="{% url 'silpo_logout' %}">
-            {% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <button type="submit" class="btn silpo-btn btn-secondary">Відключити</button>
-        </form>
-    </div>
+    <div class="silpo-card-title">«Сільпо» підключено</div>
+    <p class="silpo-card-text">Ціни для цього списку покупок і твого магазину. Кошик зміниться, лише якщо натиснеш «Зібрати кошик».</p>
+    <a class="btn btn-dark btn-small" href="{% url 'silpo_prices' %}?{{ plan_query }}">Показати ціни</a>
+    <form method="post" action="{% url 'silpo_logout' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit" class="btn btn-ghost btn-small">Відключити</button>
+    </form>
     {% else %}
-    <div class="silpo-info">
-        <div class="meal-name">Реальні ціни «Сільпо»</div>
-        <p class="silpo-text">Вхід відбувається на сторінці «Сільпо». Застосунок не бачить ані пароля, ані SMS-коду.</p>
-    </div>
+    <div class="silpo-card-title">Ціни з «Сільпо»</div>
+    <p class="silpo-card-text">Вхід на сторінці «Сільпо». Застосунок не бачить ані пароля, ані SMS-коду.</p>
     <form method="post" action="{% url 'silpo_login' %}">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.get_full_path }}">
-        <button type="submit" class="btn silpo-btn">Увійти через «Сільпо»</button>
+        <button type="submit" class="btn btn-dark btn-small">Увійти через «Сільпо»</button>
     </form>
     {% endif %}
 </div>

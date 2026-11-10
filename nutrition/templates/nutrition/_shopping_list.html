@@ -1,0 +1,12 @@
+<ul class="shopping-list">
+    {% for row in rows %}
+    <li>
+        <span class="swatch" style="background: {{ row.color }}" aria-hidden="true"></span>
+        <span class="shopping-name">{{ row.product.name }}</span>
+        <span class="shopping-amount num">{% if row.pieces %}{{ row.pieces }} шт{% else %}{{ row.grams|floatformat:0 }} г{% endif %}</span>
+        {% if cost is not None %}<span class="shopping-cost num">{{ row.cost|floatformat:2 }} грн</span>{% endif %}
+    </li>
+    {% empty %}
+    <li class="muted">Список покупок порожній.</li>
+    {% endfor %}
+</ul>

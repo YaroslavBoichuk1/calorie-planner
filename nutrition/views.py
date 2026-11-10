@@ -13,7 +13,7 @@ from .models import MealPlan, Recipe
 from .plans import load_plan_days, save_plan
 from .planner import (
     MIN_DAY_CALORIES, MAX_DAY_CALORIES, WEEK_DAYS,
-    build_recipe_period, meal_totals, period_totals, shopping_list,
+    build_recipe_period, day_totals, meal_totals, period_totals, shopping_list,
 )
 
 PERIODS = ('day', 'week', 'custom')
@@ -35,38 +35,169 @@ def parse_days_count(raw_days):
     return min(max(parse_int(raw_days, DEFAULT_DAYS), 1), MAX_DAYS)
 
 
-def add_card_info(day):
-    """Доповнює прийоми й продукти дня даними для карток: підсумки прийому, калорії, вартість і штуки продукту."""
-    for meal_info in day:
-        meal_info['totals'] = meal_totals(meal_info['meal'])
-        for item in meal_info['meal']:
-            item['calories'] = item['product'].calories_for(item['grams'])
-            item['cost'] = item['product'].cost_for(item['grams'])
-            item['pieces'] = item['product'].pieces_to_use(item['grams'])
+PLAN_KEYS = ('period', 'days', 'calories', 'protein_pct', 'fat_pct', 'carbs_pct')   # параметри, що описують сам раціон
+PERIOD_LABELS = {'day': 'День', 'week': 'Тиждень', 'custom': 'Свій'}
+SHORT_DAY_NAMES = {
+    'Понеділок': 'Пн', 'Вівторок': 'Вт', 'Середа': 'Ср', 'Четвер': 'Чт',
+    "П'ятниця": 'Пт', 'Субота': 'Сб', 'Неділя': 'Нд',
+}
+MACROS = (('protein', 'Білок', 4), ('fat', 'Жир', 9), ('carbs', 'Вуглеводи', 4))   # ключ, назва, ккал в 1 г
+PRESETS = (('Збалансовано', 30, 30, 40), ('Більше білка', 40, 30, 30), ('Менше вуглеводів', 35, 40, 25))
+DEFAULT_COLOR = '#D9D9D4'      # колір продукту, якому його ще не задали
+RING_RADIUS = 80               # радіус кільця БЖВ у SVG 200×200
+RING_GAP = 26                  # проміжок між дугами кільця (з урахуванням заокруглених кінців)
+PLATE_CENTER = 60              # центр тарілки в SVG 120×120
+PLATE_FOOD_RADIUS = 40         # радіус їжі на тарілці
+
+
+def plan_query(data, **changes):
+    """Параметри раціону з адреси (без вибору дня, страви чи товарів) → рядок запиту; changes підміняють значення."""
+    params = {key: data.get(key) for key in PLAN_KEYS if data.get(key) not in (None, '')}
+    params.update({key: value for key, value in changes.items() if value is not None})
+    return urlencode(params)
+
+
+def ring_arcs(values, radius=RING_RADIUS, gap=RING_GAP):
+    """Дуги кільця: кожне значення займає свою частку кола → список {dash, offset} для SVG."""
+    circumference = 2 * math.pi * radius
+    total = sum(values) or 1
+    arcs = []
+    done = 0.0
+    for value in values:
+        full = value / total * circumference
+        length = max(full - gap, 0.1)
+        arcs.append({'dash': f'{length:.1f} {circumference - length:.1f}', 'offset': f'{-(done + gap / 2):.1f}'})
+        done += full
+    return arcs
+
+
+def macro_summary(totals, targets):
+    """БЖВ для підсумку: грами, фактичний і цільовий відсоток, смужки й дуги кільця."""
+    calories = totals['calories'] or 1
+    rows = []
+    for (key, name, kcal_per_gram), target in zip(MACROS, targets):
+        actual = totals[key] * kcal_per_gram / calories * 100
+        rows.append({
+            'key': key, 'name': name, 'grams': totals[key], 'actual': actual, 'target': target,
+            'width': min(actual * 2, 100),     # смужка показує 0–50 %, щоб різницю було видно
+            'tick': min(target * 2, 100),
+        })
+    for row, arc in zip(rows, ring_arcs([row['actual'] for row in rows])):
+        row['arc'] = arc
+    return rows
+
+
+def product_color(product):
+    """Колір продукту для тарілки й списків."""
+    return product.color or DEFAULT_COLOR
+
+
+def plate_slices(meal):
+    """Тарілка страви: кожен продукт займає сектор за своєю вагою → список {d, color} для SVG."""
+    total = sum(item['grams'] for item in meal) or 1
+    center, radius = PLATE_CENTER, PLATE_FOOD_RADIUS
+    slices = []
+    angle = -math.pi / 2
+    for item in meal:
+        share = item['grams'] / total
+        color = product_color(item['product'])
+        if share > 0.999:   # один продукт: ціле коло з двох дуг
+            d = (f'M{center - radius} {center} A{radius} {radius} 0 1 1 {center + radius} {center} '
+                 f'A{radius} {radius} 0 1 1 {center - radius} {center} Z')
+            return [{'d': d, 'color': color}]
+        end = angle + share * 2 * math.pi
+        start_x, start_y = center + radius * math.cos(angle), center + radius * math.sin(angle)
+        end_x, end_y = center + radius * math.cos(end), center + radius * math.sin(end)
+        large = 1 if share > 0.5 else 0
+        slices.append({
+            'd': f'M{center} {center} L{start_x:.2f} {start_y:.2f} A{radius} {radius} 0 {large} 1 {end_x:.2f} {end_y:.2f} Z',
+            'color': color,
+        })
+        angle = end
+    return slices
+
+
+def dish_name(meal_info):
+    """Назва страви; у старих збережених раціонах страви нема — тоді перелік продуктів."""
+    if meal_info.get('recipe_name'):
+        return meal_info['recipe_name']
+    return ', '.join(item['product'].name for item in meal_info['meal']).capitalize()
+
+
+def short_day_name(name, index, numbered):
+    """Коротка назва дня для вкладки: «Пн», а в довгому періоді ще й номер дня."""
+    short = SHORT_DAY_NAMES.get(name, name)
+    return f'{index + 1} · {short}' if numbered else short
+
+
+def plan_view(plan_days, targets, day_index, meal_index, link):
+    """Дані для сторінки раціону: вкладки днів, прийоми вибраного дня, склад вибраної страви й підсумок дня.
+    link(day, meal) повертає адресу, яка відкриває цей день і цю страву."""
+    day_index = min(max(day_index, 0), len(plan_days) - 1)
+    day = plan_days[day_index]['day']
+    meal_index = min(max(meal_index, 0), len(day) - 1)
+    numbered = len(plan_days) > len(WEEK_DAYS)
+
+    days = [
+        {
+            'name': info['name'],
+            'short': short_day_name(info['name'], index, numbered),
+            'url': link(index, 0),
+            'selected': index == day_index,
+        }
+        for index, info in enumerate(plan_days)
+    ]
+
+    meals = []
+    for index, meal_info in enumerate(day):
+        meals.append({
+            'name': meal_info['name'],
+            'calories': meal_info['calories'],
+            'dish': dish_name(meal_info),
+            'totals': meal_totals(meal_info['meal']),
+            'slices': plate_slices(meal_info['meal']),
+            'url': link(day_index, index),
+            'selected': index == meal_index,
+        })
+
+    chosen = day[meal_index]
+    biggest = max((item['grams'] for item in chosen['meal']), default=0) or 1
+    composition = [
+        {
+            'name': item['product'].name,
+            'grams': item['grams'],
+            'pieces': item['product'].pieces_to_use(item['grams']),
+            'color': product_color(item['product']),
+            'width': round(item['grams'] / biggest * 100),
+        }
+        for item in chosen['meal']
+    ]
+
+    totals = day_totals(day)
+    period = period_totals(plan_days)
+    return {
+        'days': days if len(plan_days) > 1 else [],
+        'day_name': plan_days[day_index]['name'] if len(plan_days) > 1 else 'Сьогодні',
+        'meals': meals,
+        'chosen': {'name': chosen['name'], 'dish': meals[meal_index]['dish'], 'items': composition},
+        'summary': {'totals': totals, 'macros': macro_summary(totals, targets)},
+        'period': {'days': len(plan_days), 'totals': period},
+        'shopping_count': len(shopping_list(plan_days)),
+    }
 
 
 def shopping_rows(days):
-    """Рядки списку покупок для шаблону: продукт, грами, штуки й вартість."""
+    """Рядки списку покупок: продукт, колір, грами, штуки й вартість (None, якщо ціна невідома)."""
     rows = []
     for product, grams in shopping_list(days).items():
         rows.append({
             'product': product,
+            'color': product_color(product),
             'grams': grams,
             'pieces': product.pieces_for(grams),
             'cost': product.cost_for(grams),
         })
     return rows
-
-
-def split_into_weeks(days):
-    """Ділить дні на тижні по 7 для показу → список {name, days}; останній тиждень може бути неповним."""
-    weeks = []
-    for start in range(0, len(days), len(WEEK_DAYS)):
-        weeks.append({
-            'name': f'Тиждень {len(weeks) + 1}',
-            'days': days[start:start + len(WEEK_DAYS)],
-        })
-    return weeks
 
 
 def read_choices(data):
@@ -103,58 +234,25 @@ def build_plan_days(choices):
     )
 
 
-def result_context(plan_days, period, protein_pct, fat_pct, carbs_pct):
-    """Дані для показу раціону: картки, тижні, список покупок, підсумки, БЖВ і кільце."""
-    context = {'period': period}
-
-    # підсумки й картки: для кількох днів або для одного дня
-    totals = period_totals(plan_days)
-    for day_info in plan_days:
-        add_card_info(day_info['day'])
-
-    if period == 'day':
-        context['day'] = plan_days[0]['day']
-    else:
-        context['plan_days'] = plan_days
-        if len(plan_days) > len(WEEK_DAYS):
-            context['plan_weeks'] = split_into_weeks(plan_days)
-    context['shopping'] = shopping_rows(plan_days)
-    context['shopping_has_cost'] = totals['cost'] is not None
-
-    # для темної панелі: розклад БЖВ (грами, фактичний % від калорій, ціль %)
-    total_cal = totals['calories'] or 1
-    macros = [
-        {'name': 'Білок',     'grams': totals['protein'], 'actual': totals['protein'] * 4 / total_cal * 100, 'target': protein_pct, 'color': 'protein'},
-        {'name': 'Жир',       'grams': totals['fat'],     'actual': totals['fat'] * 9 / total_cal * 100,     'target': fat_pct,     'color': 'fat'},
-        {'name': 'Вуглеводи', 'grams': totals['carbs'],   'actual': totals['carbs'] * 4 / total_cal * 100,   'target': carbs_pct,   'color': 'carbs'},
-    ]
-
-    # для кільця: довжина кольорової дуги кожного макросу
-    circumference = 2 * math.pi * 70          # довжина кола (радіус 70)
-    offset = 0.0
-    for m in macros:
-        length = m['actual'] / 100 * circumference   # частка макросу × коло
-        m['dash'] = f"{length:.1f} {circumference - length:.1f}"
-        m['offset'] = round(-offset, 1)
-        offset += length
-
-    context['totals'] = totals
-    context['macros'] = macros
-    return context
+def targets_of(choices):
+    """Цільові відсотки БЖВ із вибору."""
+    return choices['protein_pct'], choices['fat_pct'], choices['carbs_pct']
 
 
 def planner_view(request):
-    """Головна сторінка: читає форму, будує раціон на день або кілька днів і показує його (або повідомлення про помилку)."""
+    """Головна сторінка «Раціон»: будує раціон за параметрами з адреси й показує вибраний день і страву."""
     choices = read_choices(request.GET)
-
-    # Базовий context: те, що потрібно ФОРМІ (є завжди — і при успіху, і при помилці)
+    base = plan_query(request.GET)
     context = {
         **choices,
-        'max_days': MAX_DAYS,
-        'min_calories': MIN_DAY_CALORIES,
-        'max_calories': MAX_DAY_CALORIES,
-        'query': request.GET.urlencode(),
-        'silpo_connected': silpo.is_connected(request.session),
+        'period_label': PERIOD_LABELS[choices['period']],
+        'period_links': [
+            {'label': label, 'url': f"?{plan_query(request.GET, period=key)}", 'active': key == choices['period']}
+            for key, label in PERIOD_LABELS.items()
+        ],
+        'query': base,
+        'show_shopping': True,
+        'show_save': True,
     }
 
     try:
@@ -163,10 +261,60 @@ def planner_view(request):
         context['error'] = str(error)
         return render(request, 'nutrition/planner.html', context)
 
-    context.update(result_context(
-        plan_days, choices['period'], choices['protein_pct'], choices['fat_pct'], choices['carbs_pct'],
-    ))
+    def link(day_index, meal_index):
+        """Адреса сторінки з вибраним днем і стравою."""
+        return f"?{plan_query(request.GET, day=day_index, meal=meal_index)}"
+
+    context['view'] = plan_view(
+        plan_days, targets_of(choices),
+        parse_int(request.GET.get('day'), 0), parse_int(request.GET.get('meal'), 0), link,
+    )
     return render(request, 'nutrition/planner.html', context)
+
+
+def goal_view(request):
+    """Сторінка «Ціль»: період, калорії й пропорція БЖВ. Кнопка відкриває раціон із цими параметрами."""
+    choices = read_choices(request.GET)
+    presets = [
+        {
+            'name': name,
+            'url': f"?{plan_query(request.GET, protein_pct=protein, fat_pct=fat, carbs_pct=carbs)}",
+            'active': (choices['protein_pct'], choices['fat_pct'], choices['carbs_pct']) == (protein, fat, carbs),
+        }
+        for name, protein, fat, carbs in PRESETS
+    ]
+    macros = [
+        {'key': key, 'name': name, 'pct': choices[f'{key}_pct'],
+         'grams': choices['target_calories'] * choices[f'{key}_pct'] / 100 / kcal_per_gram}
+        for key, name, kcal_per_gram in MACROS
+    ]
+    return render(request, 'nutrition/goal.html', {
+        **choices,
+        'presets': presets,
+        'macros': macros,
+        'pct_sum': choices['protein_pct'] + choices['fat_pct'] + choices['carbs_pct'],
+        'max_days': MAX_DAYS,
+        'min_calories': MIN_DAY_CALORIES,
+        'max_calories': MAX_DAY_CALORIES,
+    })
+
+
+def shopping_view(request):
+    """Сторінка «Покупки»: список продуктів на весь раціон."""
+    choices = read_choices(request.GET)
+    context = {**choices, 'period_label': PERIOD_LABELS[choices['period']], 'query': plan_query(request.GET)}
+    try:
+        plan_days = build_plan_days(choices)
+    except ValueError as error:
+        context['error'] = str(error)
+        return render(request, 'nutrition/shopping.html', context)
+    totals = period_totals(plan_days)
+    context.update({
+        'rows': shopping_rows(plan_days),
+        'days_total': len(plan_days),
+        'cost': totals['cost'],
+    })
+    return render(request, 'nutrition/shopping.html', context)
 
 
 @require_POST
@@ -190,13 +338,27 @@ def plan_list_view(request):
 
 
 def plan_detail_view(request, pk):
-    """Сторінка одного збереженого раціону."""
+    """Сторінка одного збереженого раціону: ті самі дні й тарілки, а також список покупок."""
     if pk > MAX_DB_ID:
         raise Http404
     plan = get_object_or_404(MealPlan, pk=pk)
-    context = result_context(load_plan_days(plan), plan.period, plan.protein_pct, plan.fat_pct, plan.carbs_pct)
-    context['plan'] = plan
-    return render(request, 'nutrition/plan_detail.html', context)
+    plan_days = load_plan_days(plan)
+
+    def link(day_index, meal_index):
+        """Адреса цієї ж сторінки з вибраним днем і стравою."""
+        return f'?day={day_index}&meal={meal_index}'
+
+    view = plan_view(
+        plan_days, (plan.protein_pct, plan.fat_pct, plan.carbs_pct),
+        parse_int(request.GET.get('day'), 0), parse_int(request.GET.get('meal'), 0), link,
+    )
+    rows = shopping_rows(plan_days)
+    return render(request, 'nutrition/plan_detail.html', {
+        'plan': plan,
+        'view': view,
+        'rows': rows,
+        'cost': view['period']['totals']['cost'],
+    })
 
 
 def safe_next_url(request):

@@ -3,16 +3,21 @@
 {% block title %}Збережені раціони{% endblock %}
 
 {% block content %}
-<section class="plan-page">
-    <h1 class="plan-title">Збережені раціони</h1>
+<header class="page-head">
+    <div>
+        <div class="eyebrow">Раціони, які ти зберіг</div>
+        <h1 class="page-title">Збережені</h1>
+    </div>
+</header>
+<div class="plan-rows">
     {% for plan in plans %}
     <a class="plan-row" href="{% url 'plan_detail' plan.pk %}">
         <span class="plan-row-name">{{ plan.name }}</span>
-        <span class="plan-meta num">{{ plan.created_at|date:"d.m.Y H:i" }} · днів: {{ plan.days_count }} · {{ plan.calories }} ккал на день</span>
+        <span class="plan-row-meta num">{{ plan.created_at|date:"d.m.Y H:i" }} · днів: {{ plan.days_count }} · {{ plan.calories }} ккал на день</span>
         {% with cost=plan.total_cost %}{% if cost is not None %}<span class="plan-row-cost num">{{ cost|floatformat:2 }} грн</span>{% endif %}{% endwith %}
     </a>
     {% empty %}
-    <p class="plan-meta">Поки немає збережених раціонів. Склади раціон у <a href="{% url 'planner' %}">планувальнику</a> й натисни «Зберегти раціон».</p>
+    <p class="muted">Поки немає збережених раціонів. Склади раціон і натисни «Зберегти раціон».</p>
     {% endfor %}
-</section>
+</div>
 {% endblock %}

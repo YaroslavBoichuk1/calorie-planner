@@ -4,30 +4,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Calorie Planner{% endblock %}</title>
+    <title>{% block title %}Раціон{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'nutrition/style.css' %}">
 </head>
 <body>
-<div class="page">
-
-    <header class="topbar">
-        <div class="logo-mark">Р</div>
-        <div class="logo-text">Раціон</div>
-        <nav class="topnav">
-            <a href="{% url 'planner' %}">Планувальник</a>
-            <a href="{% url 'plan_list' %}">Збережені раціони</a>
+{% with current=request.resolver_match.url_name %}
+<div class="app">
+    <!-- Бокове меню: на комп'ютері -->
+    <aside class="sidebar">
+        <a class="brand" href="{% url 'planner' %}?{{ plan_query }}"><span class="brand-mark" aria-hidden="true"><span></span></span>раціон</a>
+        <nav class="side-nav" aria-label="Розділи">
+            {% include 'nutrition/_nav_links.html' %}
         </nav>
-    </header>
+        {% include 'nutrition/_silpo.html' %}
+    </aside>
 
-    {% for message in messages %}
-    <div class="message message-{{ message.tags }}" role="status">{{ message }}</div>
-    {% endfor %}
+    <main class="content">
+        {% for message in messages %}
+        <div class="message message-{{ message.tags }}" role="status">{{ message }}</div>
+        {% endfor %}
 
-    {% block content %}{% endblock %}
+        {% block content %}{% endblock %}
 
-    <footer class="site-footer">Харчова цінність продуктів: <a href="https://fdc.nal.usda.gov/" target="_blank" rel="noopener">USDA FoodData Central</a>.</footer>
+        <footer class="site-footer">Харчова цінність продуктів: <a href="https://fdc.nal.usda.gov/" target="_blank" rel="noopener">USDA FoodData Central</a>.</footer>
+    </main>
 </div>
+
+<!-- Плаваюче меню: на телефоні -->
+<nav class="bottom-nav" aria-label="Розділи">
+    {% include 'nutrition/_nav_links.html' %}
+</nav>
+{% endwith %}
 </body>
 </html>

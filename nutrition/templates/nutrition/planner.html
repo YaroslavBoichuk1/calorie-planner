@@ -1,83 +1,28 @@
 {% extends 'nutrition/base.html' %}
 
 {% block content %}
-    <div class="layout">
-
-        <!-- ЛІВА КОЛОНКА: параметри -->
-        <form method="get" class="form">
-            <div class="field">
-    <div class="field-label">Період</div>
-    <div class="period-switch">
-        <label>
-            <input type="radio" name="period" value="day" {% if period == 'day' %}checked{% endif %}>
-            <span>День</span>
-        </label>
-        <label>
-            <input type="radio" name="period" value="week" {% if period == 'week' %}checked{% endif %}>
-            <span>Тиждень</span>
-        </label>
-        <label>
-            <input type="radio" name="period" value="custom" {% if period == 'custom' %}checked{% endif %}>
-            <span>Свій</span>
-        </label>
+<header class="page-head">
+    <div>
+        <div class="eyebrow num">Раціон · {{ period_label }}{% if period == 'custom' %} ({{ days_count }} дн.){% endif %} · {{ target_calories }} ккал на день</div>
+        <h1 class="page-title">{% if view %}{{ view.day_name }}{% else %}Раціон{% endif %}</h1>
     </div>
+    <div class="head-actions">
+        <nav class="segmented" aria-label="Період">
+            {% for p in period_links %}
+            <a class="segment{% if p.active %} is-active{% endif %}" href="{{ p.url }}"{% if p.active %} aria-current="true"{% endif %}>{{ p.label }}</a>
+            {% endfor %}
+        </nav>
+        <a class="chip num" href="{% url 'goal' %}?{{ query }}">{{ target_calories }} ккал · Б{{ protein_pct }} Ж{{ fat_pct }} В{{ carbs_pct }}</a>
+    </div>
+</header>
+
+{% if error %}
+<div class="error" role="alert">
+    <div class="error-title">Не вдалося скласти раціон</div>
+    <div class="error-text">{{ error }}</div>
+    <a class="btn btn-dark btn-small" href="{% url 'goal' %}?{{ query }}">Змінити ціль</a>
 </div>
-            <div class="field days-field">
-                <label class="field-label" for="days">Кількість днів (1–{{ max_days }})</label>
-                <input class="kcal num" id="days" type="number" name="days" value="{{ days_count }}">
-            </div>
-
-            <div class="field">
-                <label class="field-label" for="calories">Калорії на день ({{ min_calories }}–{{ max_calories }})</label>
-                <input class="kcal num" id="calories" type="number" name="calories" min="{{ min_calories }}" max="{{ max_calories }}" value="{{ target_calories }}">
-            </div>
-
-            <fieldset class="field">
-                <legend class="field-label">Пропорція БЖВ</legend>
-                <div class="ratio-bar">
-                    <span style="width: {{ protein_pct }}%; background: var(--protein)"></span>
-                    <span style="width: {{ fat_pct }}%; background: var(--fat)"></span>
-                    <span style="width: {{ carbs_pct }}%; background: var(--carbs)"></span>
-                </div>
-                <div class="pct-grid">
-                    <label class="pct">
-                        <span class="pct-name"><span class="dot" style="background: var(--protein)"></span>Білок</span>
-                        <span class="pct-box"><input class="num" type="number" name="protein_pct" min="0" max="100" value="{{ protein_pct }}"><span class="pct-sign">%</span></span>
-                    </label>
-                    <label class="pct">
-                        <span class="pct-name"><span class="dot" style="background: var(--fat)"></span>Жир</span>
-                        <span class="pct-box"><input class="num" type="number" name="fat_pct" min="0" max="100" value="{{ fat_pct }}"><span class="pct-sign">%</span></span>
-                    </label>
-                    <label class="pct">
-                        <span class="pct-name"><span class="dot" style="background: var(--carbs)"></span>Вуглеводи</span>
-                        <span class="pct-box"><input class="num" type="number" name="carbs_pct" min="0" max="100" value="{{ carbs_pct }}"><span class="pct-sign">%</span></span>
-                    </label>
-                </div>
-            </fieldset>
-
-            <button type="submit" class="btn">Порахувати раціон</button>
-        </form>
-
-        <!-- ПРАВА КОЛОНКА: результат -->
-        <section class="result">
-              {% if error %}
-            <!-- Повідомлення про помилку -->
-            <div class="error">
-                <div class="error-title">Не вдалося скласти раціон</div>
-                <div class="error-text">{{ error }}</div>
-            </div>
-            {% else %}
-            {% include 'nutrition/_result.html' %}
-            {% include 'nutrition/_silpo.html' %}
-
-            <!-- Зберегти раціон -->
-            <form method="post" action="{% url 'plan_save' %}" class="save-plan">
-                {% csrf_token %}
-                <input type="hidden" name="query" value="{{ query }}">
-                <input class="save-plan-name" type="text" name="name" maxlength="100" placeholder="Назва раціону (необов'язково)" aria-label="Назва раціону">
-                <button type="submit" class="btn save-plan-btn">Зберегти раціон</button>
-            </form>
-            {% endif %}
-        </section>
-    </div>
+{% else %}
+{% include 'nutrition/_plan_view.html' %}
+{% endif %}
 {% endblock %}

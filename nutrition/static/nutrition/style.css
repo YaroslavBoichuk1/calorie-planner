@@ -1,251 +1,349 @@
-/* === Палітра (CSS-змінні) === */
+/* === Палітра й основа (за макетами від 9 листопада) === */
 :root {
-    --bg: #F4F1EA;
-    --ink: #16231C;
-    --muted: #4A5750;
-    --green: #1F6B46;
-    --green-dark: #134A30;
+    --bg: #F1F1EE;
+    --ink: #111412;
+    --muted: #5E625F;
+    --muted-strong: #4B4F4C;
     --card: #FFFFFF;
-    --line: #E4DED0;
-    --soft: #EEE9DD;
-    --field: #F4F1EA;
+    --soft: #E6E6E2;
+    --line: #ECECE8;
+    --track: #F0F0EC;
+    --border: #D9D9D4;
+    --accent: #FF5B2E;
+    --warning: #7A4410;
+    --error: #B23A0E;
 
-    /* кольори макронутрієнтів */
-    --protein: #1F6B46;
-    --fat: #E0892B;
-    --carbs: #B7CF9A;
+    /* кольори БЖВ */
+    --protein: #3D5AFE;
+    --fat: #FF7A45;
+    --carbs: #FFC53D;
 
-    /* темна панель */
-    --dark: #16231C;
-    --on-dark: #F4F1EA;
-    --on-dark-muted: #B9C4BC;
-    --ring-track: #2A3A31;
+    /* темні картки */
+    --dark: #111412;
+    --dark-line: #2E332F;
+    --on-dark-muted: #C4C8C5;
+
+    --shadow: 0 1px 2px rgba(17, 20, 18, 0.05);
+    --shadow-raised: 0 1px 2px rgba(17, 20, 18, 0.05), 0 12px 32px rgba(17, 20, 18, 0.08);
 }
 
 * { box-sizing: border-box; }
 
 body {
     margin: 0;
-    font-family: Manrope, system-ui, sans-serif;
+    font-family: Onest, system-ui, sans-serif;
     color: var(--ink);
     background: var(--bg);
 }
 
+a { color: var(--ink); }
+a:hover { color: #000; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid var(--protein);
+    outline-offset: 2px;
+}
+
 .num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
 
-.page {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 28px 32px 48px;
+/* === Каркас: бокове меню й вміст === */
+.app { display: flex; min-height: 100vh; }
+.sidebar {
+    position: sticky; top: 0; flex: 0 0 240px; height: 100vh;
+    padding: 28px 20px; display: flex; flex-direction: column; gap: 28px;
 }
+.content { flex: 1 1 auto; min-width: 0; max-width: 1240px; padding: 28px 32px 48px; }
 
-/* === Шапка === */
-.topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
-.logo-mark {
-    width: 40px; height: 40px; border-radius: 12px;
-    background: var(--ink); color: var(--bg);
-    display: flex; align-items: center; justify-content: center;
-    font-family: Unbounded, sans-serif; font-weight: 600; font-size: 20px;
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; font-size: 21px; font-weight: 800; letter-spacing: -0.03em; text-decoration: none; }
+.brand-mark { width: 36px; height: 36px; border-radius: 12px; background: var(--ink); display: flex; align-items: center; justify-content: center; }
+.brand-mark span { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+
+.side-nav { display: flex; flex-direction: column; gap: 4px; }
+.nav-link {
+    display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 12px;
+    border-radius: 14px; color: var(--muted-strong); text-decoration: none; font-size: 15px; font-weight: 600;
 }
-.logo-text { font-family: Unbounded, sans-serif; font-weight: 600; font-size: 20px; letter-spacing: -0.01em; }
+.nav-link:hover { background: var(--soft); color: var(--ink); }
+.nav-link.is-active { background: var(--card); color: var(--ink); font-weight: 700; box-shadow: 0 1px 2px rgba(17, 20, 18, 0.06); }
 
-/* === Дві колонки === */
-.layout { display: flex; gap: 28px; align-items: flex-start; }
-.form {
-    width: 400px; flex-shrink: 0;
-    background: var(--card); border-radius: 24px; padding: 28px;
-    display: flex; flex-direction: column; gap: 26px;
-}
-.result { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.bottom-nav { display: none; }
 
-/* нижче цієї ширини правій колонці тісно: форма стає над результатом */
-@media (max-width: 1180px) {
-    .layout { flex-direction: column; }
-    .form, .result { width: 100%; }
-}
+/* === Картка «Сільпо» === */
+.silpo-card { margin-top: auto; padding: 16px; border-radius: 20px; background: var(--soft); display: flex; flex-direction: column; gap: 10px; }
+.silpo-card form { display: flex; }
+.silpo-card .btn { width: 100%; }
+.silpo-card-title { font-size: 14px; font-weight: 700; }
+.silpo-card-text { margin: 0; font-size: 13px; line-height: 1.45; color: var(--muted-strong); }
+.silpo-dark { display: none; }   /* на комп'ютері ця картка вже є в боковому меню */
+.silpo-dark .silpo-card { margin-top: 0; background: #1F2421; color: #FFFFFF; }
+.silpo-dark .silpo-card-text { color: var(--on-dark-muted); }
+.silpo-dark .btn-dark { background: var(--accent); color: var(--ink); }
+.silpo-dark .btn-ghost { color: #FFFFFF; border-color: var(--dark-line); }
 
-/* === Поля форми === */
-.field { display: flex; flex-direction: column; gap: 12px; border: 0; margin: 0; padding: 0; }
-.field-label {
-    font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--muted);
-}
-legend.field-label { padding: 0; }
-
-.kcal {
-    width: 100%; border: 0; background: var(--field); border-radius: 16px; padding: 14px;
-    text-align: center; outline: none;
-    font-family: Unbounded, sans-serif; font-size: 30px; font-weight: 600; color: var(--ink);
-}
-
-.ratio-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; gap: 3px; }
-.ratio-bar span { display: block; }
-
-.pct-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.pct { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.pct-name { display: flex; align-items: center; gap: 6px; }
-.pct-box { display: flex; align-items: center; height: 48px; padding: 0 12px; border-radius: 12px; background: var(--field); }
-.pct-box input { width: 100%; border: 0; background: transparent; outline: none; font-family: inherit; font-size: 18px; font-weight: 700; color: var(--ink); }
-.pct-sign { color: var(--muted); }
-
-.dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-
+/* === Кнопки === */
 .btn {
-    margin-top: 4px; height: 56px; border: 0; border-radius: 16px;
-    background: var(--green); color: #fff; cursor: pointer;
-    font-family: inherit; font-size: 16px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 48px; padding: 0 20px; border: 0; border-radius: 999px;
+    font-family: inherit; font-size: 15px; font-weight: 700; text-decoration: none; cursor: pointer;
+    background: var(--ink); color: #FFFFFF;
 }
-.btn:hover { background: var(--green-dark); }
+.btn:hover { color: #FFFFFF; background: #2A2E2B; }
+.btn-small { min-height: 40px; padding: 0 16px; font-size: 14px; }
+.btn-accent { background: var(--accent); color: var(--ink); font-weight: 800; }
+.btn-accent:hover { background: #F04A1C; color: var(--ink); }
+.btn-light { background: #FFFFFF; color: var(--ink); }
+.btn-light:hover { background: var(--soft); color: var(--ink); }
+.btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--border); }
+.btn-ghost:hover { background: var(--line); color: var(--ink); }
+.btn-wide { width: 100%; min-height: 56px; font-size: 16px; }
+.btn-secondary { background: var(--soft); color: var(--ink); }
+.btn-secondary:hover { background: var(--border); color: var(--ink); }
 
-/* === Темна панель === */
-.hero {
-    background: var(--dark); color: var(--on-dark);
-    border-radius: 24px; padding: 32px 36px;
-    display: flex; align-items: center; gap: 40px;
+/* === Заголовок сторінки === */
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 24px; margin-bottom: 24px; }
+.eyebrow { font-size: 14px; font-weight: 600; color: var(--muted); }
+.page-title, .plan-title { margin: 6px 0 0; font-size: 46px; font-weight: 800; letter-spacing: -0.035em; line-height: 1; overflow-wrap: anywhere; }
+.head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.segmented { display: inline-flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--card); box-shadow: 0 1px 2px rgba(17, 20, 18, 0.06); }
+.segment {
+    display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 999px;
+    color: var(--muted-strong); text-decoration: none; font-size: 14px; font-weight: 600;
 }
-.hero-cal { position: relative; flex-shrink: 0; width: 168px; height: 168px; }
-.ring { transform: rotate(-90deg); }
-.ring-track { fill: none; stroke: var(--ring-track); stroke-width: 16; }
-.ring-seg { fill: none; stroke-width: 16; }
-.hero-cal-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.hero-cal-num { font-family: Unbounded, sans-serif; font-size: 32px; font-weight: 600; line-height: 1; }
-/* отвір кільця — 124 px, а цифра цього шрифту займає 0.78 розміру: довші числа робимо меншими */
-.hero-cal-num.digits-5 { font-size: 26px; }
-.hero-cal-num.digits-6 { font-size: 22px; }
-.hero-cal-unit { font-size: 13px; color: var(--on-dark-muted); margin-top: 6px; }
-.hero-macros { flex-grow: 1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 16px; }
-.macro { display: flex; flex-direction: column; gap: 4px; }
-.macro-name { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--on-dark-muted); }
-.macro-name .dot { width: 8px; height: 8px; }
-.macro-grams { font-size: 24px; font-weight: 800; white-space: nowrap; }
-.macro-pct { font-size: 12px; color: var(--on-dark-muted); }
-
-/* === Картки продуктів === */
-.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.card { background: var(--card); border-radius: 20px; padding: 22px; display: flex; flex-direction: column; gap: 16px; }
-.card-top { display: flex; justify-content: space-between; align-items: center; }
-.badge { padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
-.badge-1 { background: #E3EFE8; color: #134A30; }
-.badge-2 { background: #FBEBD7; color: #7A4410; }
-.badge-3 { background: #EDF3E4; color: #3E5226; }
-.card-kcal { font-size: 13px; color: var(--muted); }
-.card-name { font-size: 17px; font-weight: 700; }
-.card-grams { font-family: Unbounded, sans-serif; font-size: 40px; font-weight: 600; line-height: 1; }
-.card-grams span { font-size: 18px; color: var(--muted); margin-left: 4px; }
-.card-cost { padding-top: 14px; border-top: 1px solid var(--soft); font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; column-gap: 8px; justify-content: space-between; }
-.card-cost-val { color: var(--ink); font-weight: 700; white-space: nowrap; }
-/* === Картка страви === */
-.dish { gap: 14px; }
-.dish-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; column-gap: 12px; }
-.dish-macros { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.dish-macros > span { display: inline-flex; align-items: center; gap: 6px; }
-.dish-products { margin: 0; padding: 0; list-style: none; }
-.dish-products li { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 12px; padding: 10px 0; border-top: 1px solid var(--soft); font-size: 15px; font-weight: 600; }
-.dish-products li:last-child { padding-bottom: 0; }
-
-.meal-head { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; }
-.meal-name { font-family: Unbounded, sans-serif; font-size: 18px; font-weight: 600; }
-.meal-kcal { font-size: 14px; color: var(--muted); }
-
-/* === Загальна вартість === */
-.total { background: var(--card); border-radius: 20px; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; }
-.total-label { font-size: 13px; color: var(--muted); font-weight: 600; }
-.total-value { font-family: Unbounded, sans-serif; font-size: 22px; font-weight: 600; white-space: nowrap; }
-
-/* === Повідомлення про помилку === */
-.error {
-    background: var(--card);
-    border-left: 4px solid var(--fat);
-    border-radius: 20px;
-    padding: 20px 24px;
+.segment:hover { background: var(--line); }
+.segment.is-active { background: var(--ink); color: #FFFFFF; font-weight: 700; }
+.chip {
+    display: inline-flex; align-items: center; min-height: 48px; padding: 0 18px;
+    border: 1px solid var(--border); border-radius: 999px; text-decoration: none; font-size: 14px; font-weight: 700;
 }
-.error-title { font-family: Unbounded, sans-serif; font-size: 16px; font-weight: 600; margin-bottom: 6px; }
-.error-text { color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
+.chip:hover { background: var(--line); }
+.back-link { display: inline-block; margin-bottom: 12px; font-size: 14px; font-weight: 600; color: var(--muted-strong); text-decoration: none; }
+.back-link:hover { color: var(--ink); }
 
-@media (max-width: 640px) {
-    .hero { flex-direction: column; align-items: center; gap: 24px; }
-    .hero-macros { width: 100%; }
-    .cards { grid-template-columns: 1fr; }
-    .page { padding: 20px; }
+/* === Картки === */
+.panel { background: var(--card); border-radius: 28px; padding: 24px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 16px; }
+.panel-title { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em; }
+.panel-dark { background: var(--dark); color: #FFFFFF; box-shadow: none; }
+.panel-dark a.btn-light { color: var(--ink); }
+.eyebrow-dark { color: var(--on-dark-muted); }
+.dark-number { margin-top: 4px; font-size: 32px; font-weight: 800; letter-spacing: -0.03em; }
+.dark-note { margin: 0; font-size: 15px; line-height: 1.45; color: #E4E7E5; }
+
+/* === Вкладки днів === */
+.day-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 24px; }
+.day-tab {
+    flex: 1 0 64px; min-height: 56px; padding: 0 14px; border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--card); text-decoration: none; font-size: 16px; font-weight: 800; white-space: nowrap;
 }
-/* === Перемикач День / Тиждень === */
-.period-switch { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--field); }
-.period-switch label { flex: 1; cursor: pointer; }
-.period-switch input { position: absolute; opacity: 0; }
-.period-switch span { display: block; padding: 10px; border-radius: 9px; text-align: center; font-weight: 700; color: var(--muted); }
-.period-switch input:checked + span { background: var(--green); color: #fff; }
-.period-switch input:focus-visible + span { outline: 2px solid var(--green-dark); outline-offset: 2px; }
+.day-tab:hover { background: #FAFAF8; }
+.day-tab.is-active { background: var(--ink); color: #FFFFFF; }
 
-/* === Дні тижня === */
-.week-day { padding: 18px 20px; border-radius: 20px; background: var(--soft); }
-.week-day summary { cursor: pointer; font-family: Unbounded, sans-serif; font-size: 16px; font-weight: 600; }
-.week-day .meal-head { margin: 20px 0 12px; }
+/* === Сторінка раціону === */
+.plan-grid { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px; margin-bottom: 24px; }
+.plan-main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
+.summary { flex: 1 1 300px; min-width: 0; gap: 20px; }
+
+.meals { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.meal-card {
+    padding: 20px 16px 22px; border-radius: 32px; text-decoration: none; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    transition: background-color .25s, box-shadow .25s;
+}
+.meal-card:hover { background: #FAFAF8; }
+.meal-card.is-active { background: var(--card); box-shadow: var(--shadow-raised); }
+.meal-label { font-size: 13px; font-weight: 700; color: var(--muted); }
+.plate { display: block; width: 100%; max-width: 196px; height: auto; transition: transform .45s cubic-bezier(.2, .8, .2, 1); }
+.meal-card:hover .plate { transform: rotate(-10deg) scale(1.03); }
+.plate-shadow { fill: var(--ink); fill-opacity: 0.07; }
+.plate-rim { fill: #FFFFFF; }
+.plate-well { fill: #F5F4F0; }
+.plate-food { stroke: #FFFFFF; stroke-width: 1.5; stroke-linejoin: round; }
+.meal-dish { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; }
+.meal-macros { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 12px; font-size: 13px; font-weight: 600; color: var(--muted-strong); }
+.meal-macros > span { display: inline-flex; align-items: center; gap: 5px; }
+.price-pill { padding: 4px 10px; border-radius: 999px; background: var(--ink); color: #FFFFFF; font-weight: 700; }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+.dot-protein { background: var(--protein); }
+.dot-fat { background: var(--fat); }
+.dot-carbs { background: var(--carbs); }
+
+.composition { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px 24px; }
+.composition li { display: flex; align-items: center; gap: 14px; }
+.swatch { width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(17, 20, 18, 0.06); }
+.composition-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.composition-line { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; font-weight: 700; }
+.bar { display: block; height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.bar span { display: block; height: 6px; border-radius: 999px; background: var(--ink); }
+
+.panel-dark[aria-label="Список покупок"] { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+
+/* === Підсумок: кільце й БЖВ === */
+.ring { position: relative; width: 196px; height: 196px; align-self: center; }
+.ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: var(--track); stroke-width: 20; }
+.ring-arc { fill: none; stroke-width: 20; stroke-linecap: round; transition: stroke-dasharray .5s, stroke-dashoffset .5s; }
+.ring-protein { stroke: var(--protein); }
+.ring-fat { stroke: var(--fat); }
+.ring-carbs { stroke: var(--carbs); }
+.ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ring-number { font-size: 40px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+.ring-unit { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+
+.macro-list { display: flex; flex-direction: column; gap: 14px; }
+.macro-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 8px; }
+.macro-name { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+.macro-name .dot { width: 10px; height: 10px; }
+.macro-pct { font-size: 13px; font-weight: 600; color: var(--muted); }
+.macro-bar { position: relative; margin-top: 8px; height: 6px; border-radius: 999px; background: var(--track); }
+.macro-bar span:first-child { display: block; height: 6px; border-radius: 999px; }
+.fill-protein { background: var(--protein); }
+.fill-fat { background: var(--fat); }
+.fill-carbs { background: var(--carbs); }
+.tick { position: absolute; top: -3px; width: 2px; height: 12px; border-radius: 1px; background: var(--ink); }
+
+.summary-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 14px; font-weight: 600; color: var(--muted); }
+.summary-line span:last-child { color: var(--ink); }
+.summary-strong { font-size: 24px; font-weight: 800; letter-spacing: -0.03em; }
+
+.save-plan { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
+
+/* === Поля форм === */
+.field-label { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.field-input {
+    width: 100%; min-height: 48px; padding: 0 16px; border: 0; border-radius: 16px;
+    background: var(--bg); font-family: inherit; font-size: 15px; color: var(--ink);
+}
+.field-big { min-height: 72px; font-size: 32px; font-weight: 800; text-align: center; letter-spacing: -0.02em; }
+
+/* === Сторінка «Ціль» === */
+.goal { max-width: 640px; display: flex; flex-direction: column; gap: 16px; }
+.goal-section { gap: 14px; }
+.segmented-wide { display: flex; }
+.segment-radio { flex: 1 1 0; cursor: pointer; }
+.segment-radio input { position: absolute; opacity: 0; }
+.segment-radio span { display: flex; align-items: center; justify-content: center; min-height: 44px; border-radius: 999px; font-size: 15px; font-weight: 700; color: var(--muted-strong); }
+.segment-radio input:checked + span { background: var(--ink); color: #FFFFFF; }
+.segment-radio input:focus-visible + span { outline: 3px solid var(--protein); outline-offset: 2px; }
+.days-field { display: none; flex-direction: column; gap: 10px; }
+.goal:has(input[name="period"][value="custom"]:checked) .days-field { display: flex; }
+
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset {
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px;
+    border: 1px solid #CFCFCA; border-radius: 999px; text-decoration: none; font-size: 14px; font-weight: 700;
+}
+.preset:hover { background: var(--line); }
+.preset.is-active { background: var(--ink); border-color: var(--ink); color: #FFFFFF; }
+
+.macro-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.macro-input { display: flex; flex-direction: column; gap: 8px; }
+.macro-input-box { display: flex; align-items: center; min-height: 52px; padding: 0 14px; border-radius: 16px; background: var(--bg); font-weight: 700; color: var(--muted); }
+.macro-input-box input { width: 100%; border: 0; background: transparent; font-family: inherit; font-size: 20px; font-weight: 800; color: var(--ink); }
+.macro-input-box input:focus-visible { outline: none; }
+.macro-input-box:focus-within { outline: 3px solid var(--protein); outline-offset: 2px; }
+.macro-grams { font-size: 13px; font-weight: 500; color: var(--muted); }
+.goal-sum { margin: 0; font-size: 14px; font-weight: 700; color: var(--muted); }
+.goal-sum.is-wrong { color: var(--error); }
+
 /* === Список покупок === */
-.shopping { display: flex; flex-direction: column; gap: 14px; padding: 22px 24px; border-radius: 20px; background: var(--card); }
-.shopping-table { width: 100%; border-collapse: collapse; font-size: 15px; }
-.shopping-table th { padding: 8px 0; border-bottom: 1px solid var(--line); text-align: left; font-size: 13px; font-weight: 600; color: var(--muted); }
-.shopping-table td { padding: 12px 0; border-bottom: 1px solid var(--soft); font-weight: 600; }
-.shopping-table tr:last-child td { border-bottom: 0; }
-.shopping-table .num-col { text-align: right; }
+.shopping-list { margin: 0; padding: 0; list-style: none; }
+.shopping-list li { min-height: 64px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); }
+.shopping-list li:last-child { border-bottom: 0; }
+.shopping-name { flex: 1 1 auto; min-width: 0; font-size: 16px; font-weight: 700; }
+.shopping-amount { font-size: 14px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.shopping-cost { min-width: 90px; text-align: right; font-size: 16px; font-weight: 800; white-space: nowrap; }
 
-/* === Кількість днів: поле видно, лише коли вибрано «Свій» === */
-.days-field { display: none; }
-.form:has(input[name="period"][value="custom"]:checked) .days-field { display: flex; }
+/* === Збережені раціони === */
+.plan-rows { display: flex; flex-direction: column; gap: 10px; }
+.plan-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 18px 22px;
+    border-radius: 24px; background: var(--card); box-shadow: var(--shadow); text-decoration: none;
+}
+.plan-row:hover { box-shadow: var(--shadow-raised); }
+.plan-row-name { font-size: 17px; font-weight: 800; overflow-wrap: anywhere; }
+.plan-row-meta { font-size: 13px; font-weight: 600; color: var(--muted); }
+.plan-row-cost { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-weight: 800; }
 
-/* === Тижні довгого періоду === */
-.week-group { padding: 18px 20px; border-radius: 20px; background: var(--line); }
-.week-group > summary { cursor: pointer; font-family: Unbounded, sans-serif; font-size: 17px; font-weight: 600; }
-.week-group .week-day { margin-top: 14px; }
+/* === Повідомлення й помилки === */
+.message {
+    margin-bottom: 16px; padding: 14px 20px; border-radius: 16px; background: var(--card);
+    box-shadow: inset 4px 0 0 #2E8B57; font-size: 15px; font-weight: 600; overflow-wrap: anywhere;
+}
+.message-error, .message-warning { box-shadow: inset 4px 0 0 var(--accent); }
+.error { padding: 24px; border-radius: 28px; background: var(--card); box-shadow: var(--shadow); display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.error-title { font-size: 20px; font-weight: 800; }
+.error-text { color: var(--muted-strong); line-height: 1.5; overflow-wrap: anywhere; }
 
-/* === Навігація === */
-.topnav { display: flex; flex-wrap: wrap; gap: 16px; margin-left: auto; font-size: 14px; font-weight: 600; }
-.topnav a { color: var(--ink); text-decoration: none; }
-.topnav a:hover { color: var(--green); }
+.site-footer { margin-top: 32px; font-size: 13px; color: var(--muted); }
+.site-footer a { color: inherit; }
 
-/* === Збереження раціону === */
-.save-plan { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px; border-radius: 20px; background: var(--card); }
-.save-plan-name { flex: 1 1 220px; min-width: 0; height: 56px; padding: 0 16px; border: 0; border-radius: 16px; background: var(--field); font-family: inherit; font-size: 15px; color: var(--ink); }
-.save-plan-btn { margin-top: 0; padding: 0 24px; }
+/* === Сторінки «Сільпо»: ціни й кошик === */
+.plan-page { display: flex; flex-direction: column; gap: 16px; }
+.plan-meta { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5; }
+.card-name { font-size: 16px; font-weight: 700; }
+.card-cost-val { font-weight: 800; white-space: nowrap; }
+.meal-name { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
 
-/* === Підключення «Сільпо» === */
-.silpo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border-radius: 20px; background: var(--card); }
+.silpo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border-radius: 28px; background: var(--card); box-shadow: var(--shadow); }
 .silpo-info { flex: 1 1 260px; min-width: 0; }
 .silpo-text { margin: 6px 0 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
-.silpo-btn { margin-top: 0; padding: 0 24px; }
-.btn-secondary { background: var(--soft); color: var(--ink); }
-.btn-secondary:hover { background: var(--line); }
+.silpo-btn { margin-top: 0; }
+.silpo .btn, .silpo-btn { background: var(--accent); color: var(--ink); font-weight: 800; }
+.silpo-btn.btn-secondary { background: var(--soft); }
 .silpo-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.silpo-link { display: inline-flex; align-items: center; text-decoration: none; }
-.silpo-rows { margin: 0; padding: 4px 24px; border-radius: 20px; background: var(--card); list-style: none; }
-.silpo-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; padding: 16px 0; border-bottom: 1px solid var(--soft); }
+.silpo-link { text-decoration: none; }
+.silpo-rows { margin: 0; padding: 4px 24px; border-radius: 28px; background: var(--card); box-shadow: var(--shadow); list-style: none; }
+.silpo-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .silpo-row:last-child { border-bottom: 0; }
 .silpo-need { flex: 0 0 170px; min-width: 0; }
 .silpo-offer { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
 .silpo-offer a { color: inherit; }
-.silpo-offer a:hover { color: var(--green); }
+.silpo-offer a:hover { color: var(--protein); }
 .silpo-choices { display: flex; flex-direction: column; gap: 16px; }
-.silpo-slot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 16px 24px; border-radius: 20px; background: var(--card); }
-.silpo-select { width: 100%; max-width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); font-family: inherit; font-size: 15px; font-weight: 600; color: var(--ink); }
+.silpo-slot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 16px 24px; border-radius: 28px; background: var(--card); box-shadow: var(--shadow); }
+.silpo-select { width: 100%; max-width: 100%; min-width: 0; min-height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); font-family: inherit; font-size: 15px; font-weight: 600; color: var(--ink); }
 .silpo-slot .silpo-select { flex: 1 1 220px; width: auto; }
 .silpo-offer .silpo-select { margin-bottom: 6px; }
-.silpo-warning { margin-top: 6px; font-size: 13px; font-weight: 600; line-height: 1.4; color: #7A4410; }
-.total:has(.silpo-text) { flex-wrap: wrap; gap: 10px 20px; }
-.total:has(.silpo-text) > div:first-child { flex: 1 1 240px; min-width: 0; }
+.silpo-warning { margin-top: 6px; font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--warning); }
 
-/* === Нижній рядок сторінки === */
-.site-footer { margin-top: 32px; font-size: 13px; color: var(--muted); }
-.site-footer a { color: inherit; }
+.total { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; padding: 20px 24px; border-radius: 28px; background: var(--dark); color: #FFFFFF; }
+.total > div:first-child { flex: 1 1 240px; min-width: 0; }
+.total-label { font-size: 13px; font-weight: 700; color: var(--on-dark-muted); }
+.total .silpo-text { color: #E4E7E5; }
+.total-value { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; white-space: nowrap; }
+.silpo-slot .total-label { color: var(--muted); }
 
-/* === Повідомлення після дії === */
-.message { margin-bottom: 20px; padding: 14px 20px; border-left: 4px solid var(--green); border-radius: 14px; background: var(--card); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
-.message-error, .message-warning { border-left-color: var(--fat); }
+/* === Телефон: плаваюче меню знизу === */
+@media (max-width: 900px) {
+    .sidebar { display: none; }
+    .silpo-dark { display: block; }
+    .content { padding: 20px 16px 112px; }
+    .page-title, .plan-title { font-size: 34px; }
+    .bottom-nav {
+        display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+        position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 10; height: 64px; padding: 6px;
+        border-radius: 999px; background: var(--dark); box-shadow: 0 12px 32px rgba(17, 20, 18, 0.25);
+    }
+    .bottom-nav .nav-link {
+        flex-direction: column; justify-content: center; gap: 2px; min-height: 0; padding: 0;
+        border-radius: 999px; color: #D4D7D5; font-size: 12px;
+    }
+    .bottom-nav .nav-link:hover { background: #2A2E2B; color: #FFFFFF; }
+    .bottom-nav .nav-link.is-active { background: #FFFFFF; color: var(--ink); box-shadow: none; }
 
-/* === Сторінки збережених раціонів === */
-.plan-page { display: flex; flex-direction: column; gap: 16px; }
-.plan-title { margin: 0; font-family: Unbounded, sans-serif; font-size: 24px; font-weight: 600; }
-.plan-meta { margin: 0; font-size: 14px; color: var(--muted); }
-.back-link { font-size: 14px; font-weight: 600; color: var(--green); text-decoration: none; }
-.plan-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 18px 22px; border-radius: 20px; background: var(--card); color: var(--ink); text-decoration: none; }
-.plan-row:hover { outline: 2px solid var(--green); }
-.plan-row-name { font-weight: 700; overflow-wrap: anywhere; }
-.plan-row-cost { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-weight: 700; }
+    .meals { grid-template-columns: 1fr; gap: 8px; }
+    .meal-card { display: grid; grid-template-columns: 96px 1fr; grid-template-areas: "plate label" "plate dish" "plate macros"; align-items: center; justify-items: start; gap: 4px 16px; padding: 14px 16px; border-radius: 24px; text-align: left; background: var(--card); }
+    .meal-card .plate { grid-area: plate; width: 96px; }
+    .meal-label { grid-area: label; }
+    .meal-dish { grid-area: dish; font-size: 17px; }
+    .meal-macros { grid-area: macros; justify-content: flex-start; }
+    .meal-card.is-active { box-shadow: inset 0 0 0 2px var(--ink); }
+    .silpo-need { flex-basis: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .plate, .meal-card, .ring-arc { transition: none; }
+    .meal-card:hover .plate { transform: none; }
+}

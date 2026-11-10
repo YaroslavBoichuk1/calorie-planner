@@ -12,7 +12,8 @@
     "carbs": "0.0",
     "grams_per_piece": null,
     "silpo_search": "куряче філе",
-    "fdc_id": 171077
+    "fdc_id": 171077,
+    "color": "#E9C190"
   }
 },
 {
@@ -28,7 +29,8 @@
     "carbs": "0.7",
     "grams_per_piece": 60.0,
     "silpo_search": "яйця курячі",
-    "fdc_id": 171287
+    "fdc_id": 171287,
+    "color": "#F5B731"
   }
 },
 {
@@ -44,7 +46,8 @@
     "carbs": "80.0",
     "grams_per_piece": null,
     "silpo_search": "рис довгозернистий",
-    "fdc_id": 169756
+    "fdc_id": 169756,
+    "color": "#E3D8C1"
   }
 },
 {
@@ -60,7 +63,8 @@
     "carbs": "71.5",
     "grams_per_piece": null,
     "silpo_search": "крупа гречана",
-    "fdc_id": 170286
+    "fdc_id": 170286,
+    "color": "#8A5530"
   }
 },
 {
@@ -76,7 +80,8 @@
     "carbs": "74.7",
     "grams_per_piece": null,
     "silpo_search": "вироби макаронні",
-    "fdc_id": 169736
+    "fdc_id": 169736,
+    "color": "#F0CC72"
   }
 },
 {
@@ -92,7 +97,8 @@
     "carbs": "0.0",
     "grams_per_piece": null,
     "silpo_search": "олія соняшникова рафінована",
-    "fdc_id": 171025
+    "fdc_id": 171025,
+    "color": "#EDB72F"
   }
 },
 {
@@ -108,7 +114,8 @@
     "carbs": "0.1",
     "grams_per_piece": null,
     "silpo_search": "індиче філе",
-    "fdc_id": 171098
+    "fdc_id": 171098,
+    "color": "#E8B796"
   }
 },
 {
@@ -124,7 +131,8 @@
     "carbs": "0.0",
     "grams_per_piece": null,
     "silpo_search": "свинина вирізка",
-    "fdc_id": 168230
+    "fdc_id": 168230,
+    "color": "#E59A8C"
   }
 },
 {
@@ -140,7 +148,8 @@
     "carbs": "0.0",
     "grams_per_piece": null,
     "silpo_search": "яловича лопатка",
-    "fdc_id": 173127
+    "fdc_id": 173127,
+    "color": "#A8473C"
   }
 },
 {
@@ -156,7 +165,8 @@
     "carbs": "0.0",
     "grams_per_piece": null,
     "silpo_search": "минтай",
-    "fdc_id": 173725
+    "fdc_id": 173725,
+    "color": "#C9D8DE"
   }
 },
 {
@@ -172,7 +182,8 @@
     "carbs": "4.8",
     "grams_per_piece": null,
     "silpo_search": "сир кисломолочний",
-    "fdc_id": 172182
+    "fdc_id": 172182,
+    "color": "#EDE6D6"
   }
 },
 {
@@ -188,7 +199,8 @@
     "carbs": "2.2",
     "grams_per_piece": null,
     "silpo_search": "сир гауда",
-    "fdc_id": 171241
+    "fdc_id": 171241,
+    "color": "#F6C945"
   }
 },
 {
@@ -204,7 +216,8 @@
     "carbs": "60.0",
     "grams_per_piece": null,
     "silpo_search": "квасоля",
-    "fdc_id": 175193
+    "fdc_id": 175193,
+    "color": "#D9C09A"
   }
 },
 {
@@ -220,7 +233,8 @@
     "carbs": "63.4",
     "grams_per_piece": null,
     "silpo_search": "сочевиця",
-    "fdc_id": 172420
+    "fdc_id": 172420,
+    "color": "#C8743A"
   }
 },
 {
@@ -236,7 +250,8 @@
     "carbs": "4.8",
     "grams_per_piece": null,
     "silpo_search": "молоко",
-    "fdc_id": 171267
+    "fdc_id": 171267,
+    "color": "#DCE3EA"
   }
 },
 {
@@ -252,7 +267,8 @@
     "carbs": "4.8",
     "grams_per_piece": null,
     "silpo_search": "кефір",
-    "fdc_id": 170904
+    "fdc_id": 170904,
+    "color": "#D3DCE4"
   }
 },
 {
@@ -268,7 +284,8 @@
     "carbs": "4.7",
     "grams_per_piece": null,
     "silpo_search": "йогурт білий",
-    "fdc_id": 171284
+    "fdc_id": 171284,
+    "color": "#E8E1D3"
   }
 },
 {
@@ -284,7 +301,8 @@
     "carbs": "4.6",
     "grams_per_piece": null,
     "silpo_search": "сметана",
-    "fdc_id": 171257
+    "fdc_id": 171257,
+    "color": "#EFE5CF"
   }
 },
 {
@@ -300,7 +318,8 @@
     "carbs": "0.1",
     "grams_per_piece": null,
     "silpo_search": "масло солодковершкове",
-    "fdc_id": 173410
+    "fdc_id": 173410,
+    "color": "#F8DE7E"
   }
 },
 {
@@ -316,7 +335,8 @@
     "carbs": "67.7",
     "grams_per_piece": null,
     "silpo_search": "пластівці вівсяні",
-    "fdc_id": 173904
+    "fdc_id": 173904,
+    "color": "#D9C19A"
   }
 },
 {
@@ -332,7 +352,8 @@
     "carbs": "47.5",
     "grams_per_piece": null,
     "silpo_search": "хліб",
-    "fdc_id": 172686
+    "fdc_id": 172686,
+    "color": "#C68A4E"
   }
 },
 {
@@ -348,7 +369,8 @@
     "carbs": "17.5",
     "grams_per_piece": null,
     "silpo_search": "картопля",
-    "fdc_id": 170026
+    "fdc_id": 170026,
+    "color": "#E9D29A"
   }
 },
 {
@@ -364,7 +386,8 @@
     "carbs": "9.6",
     "grams_per_piece": null,
     "silpo_search": "морква",
-    "fdc_id": 170393
+    "fdc_id": 170393,
+    "color": "#F08A2C"
   }
 },
 {
@@ -380,7 +403,8 @@
     "carbs": "9.3",
     "grams_per_piece": null,
     "silpo_search": "цибуля",
-    "fdc_id": 170000
+    "fdc_id": 170000,
+    "color": "#DCC9A8"
   }
 },
 {
@@ -396,7 +420,8 @@
     "carbs": "5.8",
     "grams_per_piece": null,
     "silpo_search": "капуста білоголова",
-    "fdc_id": 169975
+    "fdc_id": 169975,
+    "color": "#B7D58B"
   }
 },
 {
@@ -412,7 +437,8 @@
     "carbs": "3.9",
     "grams_per_piece": null,
     "silpo_search": "томат",
-    "fdc_id": 170457
+    "fdc_id": 170457,
+    "color": "#E5483B"
   }
 },
 {
@@ -428,7 +454,8 @@
     "carbs": "3.6",
     "grams_per_piece": null,
     "silpo_search": "огірок",
-    "fdc_id": 168409
+    "fdc_id": 168409,
+    "color": "#6FAF5A"
   }
 },
 {
@@ -444,7 +471,8 @@
     "carbs": "9.6",
     "grams_per_piece": null,
     "silpo_search": "буряк",
-    "fdc_id": 169145
+    "fdc_id": 169145,
+    "color": "#8E2A4B"
   }
 },
 {
@@ -460,7 +488,8 @@
     "carbs": "6.0",
     "grams_per_piece": null,
     "silpo_search": "перець",
-    "fdc_id": 170108
+    "fdc_id": 170108,
+    "color": "#E94B3C"
   }
 },
 {
@@ -476,7 +505,8 @@
     "carbs": "13.8",
     "grams_per_piece": null,
     "silpo_search": "яблуко",
-    "fdc_id": 171688
+    "fdc_id": 171688,
+    "color": "#E35D4F"
   }
 },
 {
@@ -492,7 +522,8 @@
     "carbs": "22.8",
     "grams_per_piece": null,
     "silpo_search": "банан",
-    "fdc_id": 173944
+    "fdc_id": 173944,
+    "color": "#F6D55C"
   }
 },
 {

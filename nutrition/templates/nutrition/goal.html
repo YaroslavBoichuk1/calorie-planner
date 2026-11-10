@@ -1,0 +1,53 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}Ціль{% endblock %}
+
+{% block content %}
+<header class="page-head">
+    <div>
+        <div class="eyebrow">Скільки їсти і в якій пропорції</div>
+        <h1 class="page-title">Ціль</h1>
+    </div>
+</header>
+
+<form method="get" action="{% url 'planner' %}" class="goal">
+    <section class="panel goal-section">
+        <h2 class="field-label">Період</h2>
+        <div class="segmented segmented-wide" role="radiogroup" aria-label="Період">
+            <label class="segment-radio"><input type="radio" name="period" value="day" {% if period == 'day' %}checked{% endif %}><span>День</span></label>
+            <label class="segment-radio"><input type="radio" name="period" value="week" {% if period == 'week' %}checked{% endif %}><span>Тиждень</span></label>
+            <label class="segment-radio"><input type="radio" name="period" value="custom" {% if period == 'custom' %}checked{% endif %}><span>Свій</span></label>
+        </div>
+        <div class="days-field">
+            <label class="field-label" for="days">Кількість днів (1–{{ max_days }})</label>
+            <input class="field-input num" id="days" type="number" name="days" value="{{ days_count }}">
+        </div>
+    </section>
+
+    <section class="panel goal-section">
+        <label class="field-label" for="calories">Калорії на день ({{ min_calories }}–{{ max_calories }})</label>
+        <input class="field-input field-big num" id="calories" type="number" name="calories" min="{{ min_calories }}" max="{{ max_calories }}" step="50" value="{{ target_calories }}">
+    </section>
+
+    <section class="panel goal-section">
+        <h2 class="field-label">Пропорція БЖВ</h2>
+        <nav class="presets" aria-label="Готові пропорції">
+            {% for preset in presets %}
+            <a class="preset{% if preset.active %} is-active{% endif %}" href="{{ preset.url }}"{% if preset.active %} aria-current="true"{% endif %}>{{ preset.name }}</a>
+            {% endfor %}
+        </nav>
+        <div class="macro-inputs">
+            {% for m in macros %}
+            <label class="macro-input">
+                <span class="macro-name"><span class="dot dot-{{ m.key }}"></span>{{ m.name }}</span>
+                <span class="macro-input-box"><input class="num" type="number" name="{{ m.key }}_pct" min="0" max="100" value="{{ m.pct }}"><span>%</span></span>
+                <span class="macro-grams num">≈ {{ m.grams|floatformat:0 }} г на день</span>
+            </label>
+            {% endfor %}
+        </div>
+        <p class="goal-sum num{% if pct_sum != 100 %} is-wrong{% endif %}">Разом {{ pct_sum }}%{% if pct_sum != 100 %} — має бути 100%{% endif %}</p>
+    </section>
+
+    <button type="submit" class="btn btn-accent btn-wide">Скласти раціон</button>
+</form>
+{% endblock %}

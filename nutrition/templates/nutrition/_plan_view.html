@@ -1,0 +1,107 @@
+{% if view.days %}
+<!-- Дні періоду -->
+<nav class="day-tabs" aria-label="Дні">
+    {% for d in view.days %}
+    <a class="day-tab{% if d.selected %} is-active{% endif %}" href="{{ d.url }}"{% if d.selected %} aria-current="true"{% endif %} aria-label="{{ d.name }}">{{ d.short }}</a>
+    {% endfor %}
+</nav>
+{% endif %}
+
+<div class="plan-grid">
+    <div class="plan-main">
+        <!-- Прийоми дня: тарілки -->
+        <div class="meals">
+            {% for m in view.meals %}
+            <a class="meal-card{% if m.selected %} is-active{% endif %}" href="{{ m.url }}"{% if m.selected %} aria-current="true"{% endif %}>
+                <span class="meal-label num">{{ m.name }} · {{ m.calories|floatformat:0 }} ккал</span>
+                <svg class="plate" viewBox="0 0 120 120" aria-hidden="true">
+                    <circle cx="60" cy="64" r="54" class="plate-shadow"></circle>
+                    <circle cx="60" cy="60" r="54" class="plate-rim"></circle>
+                    <circle cx="60" cy="60" r="46" class="plate-well"></circle>
+                    {% for s in m.slices %}<path d="{{ s.d }}" fill="{{ s.color }}" class="plate-food"></path>{% endfor %}
+                </svg>
+                <span class="meal-dish">{{ m.dish }}</span>
+                <span class="meal-macros num">
+                    {% if m.totals.cost is not None %}<span class="price-pill">{{ m.totals.cost|floatformat:2 }} грн</span>{% endif %}
+                    <span><span class="dot dot-protein"></span>Б {{ m.totals.protein|floatformat:0 }} г</span>
+                    <span><span class="dot dot-fat"></span>Ж {{ m.totals.fat|floatformat:0 }} г</span>
+                    <span><span class="dot dot-carbs"></span>В {{ m.totals.carbs|floatformat:0 }} г</span>
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+
+        <!-- Склад вибраної страви -->
+        <section class="panel" aria-label="Склад страви">
+            <div class="eyebrow">Склад · {{ view.chosen.name }}</div>
+            <h2 class="panel-title">{{ view.chosen.dish }}</h2>
+            <ul class="composition">
+                {% for it in view.chosen.items %}
+                <li>
+                    <span class="swatch" style="background: {{ it.color }}" aria-hidden="true"></span>
+                    <span class="composition-body">
+                        <span class="composition-line"><span>{{ it.name }}</span><span class="num">{{ it.grams|floatformat:0 }} г{% if it.pieces %} · ≈ {{ it.pieces }} шт{% endif %}</span></span>
+                        <span class="bar" aria-hidden="true"><span style="width: {{ it.width }}%"></span></span>
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        {% if show_shopping %}
+        <!-- Список покупок коротко -->
+        <section class="panel panel-dark" aria-label="Список покупок">
+            <div>
+                <div class="eyebrow eyebrow-dark">Список покупок</div>
+                <div class="dark-number num">{{ view.shopping_count }} продуктів</div>
+            </div>
+            {% if view.period.totals.cost is not None %}<div class="dark-note num">Вартість: {{ view.period.totals.cost|floatformat:2 }} грн</div>{% endif %}
+            <a class="btn btn-light btn-small" href="{% url 'shopping' %}?{{ query }}">Відкрити список</a>
+        </section>
+        {% endif %}
+    </div>
+
+    <!-- Підсумок дня -->
+    <aside class="panel summary" aria-label="Підсумок дня">
+        <div class="eyebrow">Підсумок дня</div>
+        <div class="ring">
+            <svg viewBox="0 0 200 200" aria-hidden="true">
+                <circle cx="100" cy="100" r="80" class="ring-track"></circle>
+                {% for x in view.summary.macros %}<circle cx="100" cy="100" r="80" class="ring-arc ring-{{ x.key }}" stroke-dasharray="{{ x.arc.dash }}" stroke-dashoffset="{{ x.arc.offset }}"></circle>{% endfor %}
+            </svg>
+            <div class="ring-center">
+                <div class="ring-number num">{{ view.summary.totals.calories|floatformat:0 }}</div>
+                <div class="ring-unit">ккал</div>
+            </div>
+        </div>
+
+        <div class="macro-list">
+            {% for x in view.summary.macros %}
+            <div class="macro-row">
+                <div class="macro-head">
+                    <span class="macro-name"><span class="dot dot-{{ x.key }}"></span>{{ x.name }} · <span class="num">{{ x.grams|floatformat:0 }} г</span></span>
+                    <span class="macro-pct num">{{ x.actual|floatformat:0 }}% · ціль {{ x.target }}%</span>
+                </div>
+                <div class="macro-bar" aria-hidden="true"><span class="fill-{{ x.key }}" style="width: {{ x.width }}%"></span><span class="tick" style="left: {{ x.tick }}%"></span></div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if view.summary.totals.cost is not None %}
+        <div class="summary-line"><span>Вартість дня</span><span class="num summary-strong">{{ view.summary.totals.cost|floatformat:2 }} грн</span></div>
+        {% endif %}
+        {% if view.period.days > 1 %}
+        <div class="summary-line num"><span>Днів у раціоні</span><span>{{ view.period.days }}</span></div>
+        {% endif %}
+
+        {% if show_save %}
+        <!-- Зберегти раціон -->
+        <form method="post" action="{% url 'plan_save' %}" class="save-plan">
+            {% csrf_token %}
+            <input type="hidden" name="query" value="{{ query }}">
+            <input class="field-input" type="text" name="name" maxlength="100" placeholder="Назва (необов'язково)" aria-label="Назва раціону">
+            <button type="submit" class="btn btn-dark">Зберегти раціон</button>
+        </form>
+        {% endif %}
+    </aside>
+</div>
