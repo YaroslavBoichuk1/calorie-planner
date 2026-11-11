@@ -1,6 +1,9 @@
 import io
+import os
 import re
 import json
+import subprocess
+import sys
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -8,7 +11,8 @@ import requests
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.management import CommandError, call_command
-from django.test import Client, SimpleTestCase, TestCase
+from django.conf import settings
+from django.test import Client, RequestFactory, SimpleTestCase, TestCase
 from django.urls import reverse
 
 from . import login_limits, silpo, views
@@ -1187,7 +1191,8 @@ class SilpoCartTests(TestCase):
         self.assertIn('id-dear', [product['productId'] for product in add['products']])
         self.assertContains(response, 'Кошик «Сільпо» зібрано')
         self.assertContains(response, 'Оформити на сайті')
-        self.assertContains(response, '321.00 грн')
+        self.assertContains(response, '321,00 грн')          # українською дробова частина — після коми
+        self.assertContains(response, '<p class="silpo-text num">Час доставки: 05.11, 10:00–12:00.</p>')
         self.assertNotContains(response, 'secret-phone')
         self.assertNotContains(response, 'access-secret')
         self.assertEqual(sorted(self.client.session[silpo.ADDED_KEY]['products']), ['id-chicken', 'id-dear'])
@@ -1814,3 +1819,57 @@ class GoalPanelTests(RecipeDataMixin, TestCase):
     def test_shopping_error_links_to_goal_panel(self):
         html = self.client.get('/shopping/', {'protein_pct': '90'}).content.decode()
         self.assertIn('href="/?protein_pct=90#goal"', html)
+
+
+class ProductionSettingsTests(RecipeDataMixin, TestCase):
+    """Етап 13.4: налаштування для сервера, мова, адреса за проксі, сторінки помилок."""
+
+    def run_manage(self, *args, **env):
+        """Запускає manage.py окремим процесом з іншими змінними середовища (налаштування читаються при старті)."""
+        full_env = {**os.environ, 'DJANGO_DEBUG': '', 'DJANGO_SECRET_KEY': '', **env}
+        return subprocess.run(
+            [sys.executable, 'manage.py', *args], cwd=settings.BASE_DIR, env=full_env,
+            capture_output=True, text=True, timeout=60,
+        )
+
+    def test_server_refuses_to_start_without_secret_key(self):
+        result = self.run_manage('check')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Задай DJANGO_SECRET_KEY', result.stderr)
+
+    def test_deploy_check_is_clean(self):
+        result = self.run_manage(
+            'check', '--deploy', '--fail-level', 'WARNING',
+            DJANGO_SECRET_KEY='test-' + 'x' * 60 + '-not-a-real-key-but-long-enough',
+            DJANGO_ALLOWED_HOSTS='racion.example.com', DJANGO_CSRF_TRUSTED_ORIGINS='https://racion.example.com',
+            DJANGO_BEHIND_PROXY='1',
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn('no issues', result.stdout)
+
+    def test_client_ip_behind_proxy_takes_the_address_added_by_proxy(self):
+        request = RequestFactory().get('/', REMOTE_ADDR='127.0.0.1', HTTP_X_FORWARDED_FOR='6.6.6.6, 203.0.113.7')
+        with self.settings(BEHIND_PROXY=True):
+            self.assertEqual(login_limits.client_ip(request), '203.0.113.7')     # 6.6.6.6 міг вписати сам відвідувач
+        with self.settings(BEHIND_PROXY=False):
+            self.assertEqual(login_limits.client_ip(request), '127.0.0.1')       # без проксі заголовку не віримо
+        with self.settings(BEHIND_PROXY=True):
+            self.assertEqual(login_limits.client_ip(RequestFactory().get('/', REMOTE_ADDR='10.0.0.1')), '10.0.0.1')
+
+    def test_numbers_in_svg_and_styles_keep_a_dot(self):
+        self.make_recipes()
+        html = self.client.get('/', {'period': 'week', 'calories': '1850'}).content.decode()
+        self.assertIn('class="macro-bar"', html)
+        broken = re.findall(r'(?:style|d|stroke-dasharray|stroke-dashoffset)="[^"]*\d,\d[^"]*"', html)
+        self.assertEqual(broken, [])
+        self.assertRegex(html, r'style="width: \d+(\.\d+)?%"')
+
+    def test_django_speaks_ukrainian(self):
+        self.assertEqual(settings.LANGUAGE_CODE, 'uk')
+        html = self.client.get(reverse('login')).content.decode()
+        self.assertIn('lang="uk"', html)
+
+    def test_friendly_404_page(self):
+        response = self.client.get('/nope/')
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, 'Такої сторінки немає', status_code=404)

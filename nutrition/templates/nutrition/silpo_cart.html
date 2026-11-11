@@ -30,7 +30,7 @@
     <div class="total">
         <div>
             <div class="total-label">До сплати</div>
-            <p class="silpo-text num">{% if cart.products_total is not None %}Товари {{ cart.products_total|floatformat:2 }} грн{% endif %}{% if cart.delivery_total is not None %}, доставка {{ cart.delivery_total|floatformat:2 }} грн{% endif %}{% if cart.slot %}. Час доставки: {{ cart.slot }}{% endif %}.</p>
+            <p class="silpo-text num">{% if cart.products_total is not None %}Товари {{ cart.products_total|floatformat:2 }} грн{% if cart.delivery_total is not None %}, доставка {{ cart.delivery_total|floatformat:2 }} грн{% endif %}. {% endif %}{% if cart.slot %}Час доставки: {{ cart.slot }}.{% endif %}</p>
         </div>
         <div class="total-value num">{{ cart.total|floatformat:2 }} грн</div>
     </div>

@@ -1,3 +1,4 @@
+{% load l10n %}
 {% if view.days %}
 <!-- Дні періоду -->
 <nav class="day-tabs" aria-label="Дні">
@@ -76,7 +77,7 @@
                     <span class="macro-name"><span class="dot dot-{{ x.key }}"></span>{{ x.name }} · <span class="num">{{ x.grams|floatformat:0 }} г</span></span>
                     <span class="macro-pct num">{{ x.actual|floatformat:0 }}% · ціль {{ x.target }}%</span>
                 </div>
-                <div class="macro-bar" aria-hidden="true"><span class="fill-{{ x.key }}" style="width: {{ x.width }}%"></span><span class="tick" style="left: {{ x.tick }}%"></span></div>
+                <div class="macro-bar" aria-hidden="true"><span class="fill-{{ x.key }}" style="width: {{ x.width|unlocalize }}%"></span><span class="tick" style="left: {{ x.tick|unlocalize }}%"></span></div>
             </div>
             {% endfor %}
         </div>

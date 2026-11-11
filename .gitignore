@@ -3,6 +3,13 @@
 
 # База даних: адмін-акаунт і збережені раціони. Продукти й страви лежать у nutrition/fixtures/
 db.sqlite3
+db.sqlite3-*
+
+# Налаштування й секрети цього комп'ютера (приклад — .env.example)
+.env
+
+# Зібрані collectstatic файли CSS і JS
+staticfiles/
 
 # Особистий журнал навчання
 PROGRESS.md

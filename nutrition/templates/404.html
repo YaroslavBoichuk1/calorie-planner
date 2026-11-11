@@ -1,0 +1,11 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}Сторінку не знайдено{% endblock %}
+
+{% block content %}
+<div class="error">
+    <div class="error-title">Такої сторінки немає</div>
+    <div class="error-text">Можливо, посилання застаріло або раціон видалено.</div>
+    <a class="btn btn-dark btn-small" href="{% url 'planner' %}">На головну</a>
+</div>
+{% endblock %}

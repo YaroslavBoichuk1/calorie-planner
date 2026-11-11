@@ -4,6 +4,7 @@
 """
 import hashlib
 
+from django.conf import settings
 from django.core.cache import cache
 
 EMAIL_FAILURE_LIMIT = 5        # невдалих входів в одну пошту, після яких вхід у неї блокується
@@ -16,7 +17,15 @@ REGISTER_LIMIT_MESSAGE = 'Забагато нових акаунтів з ціє
 
 
 def client_ip(request):
-    """Адреса, з якої прийшов запит. (Коли сайт стоятиме за проксі, тут треба буде брати адресу від проксі.)"""
+    """Адреса, з якої прийшов запит.
+
+    За проксі (Caddy) REMOTE_ADDR — це адреса самого проксі, а справжню він дописує в кінець X-Forwarded-For.
+    Беремо саме останню: усе, що лівіше, міг підставити сам відвідувач.
+    """
+    if getattr(settings, 'BEHIND_PROXY', False):
+        forwarded = [part.strip() for part in request.META.get('HTTP_X_FORWARDED_FOR', '').split(',') if part.strip()]
+        if forwarded:
+            return forwarded[-1]
     return request.META.get('REMOTE_ADDR', '')
 
 
