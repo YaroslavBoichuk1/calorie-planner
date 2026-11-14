@@ -7,6 +7,8 @@ urlpatterns = [
     path('accounts/register/', account_views.register_view, name='register'),
     path('accounts/login/', account_views.login_view, name='login'),
     path('accounts/logout/', account_views.logout_view, name='logout'),
+    path('accounts/delete/', account_views.delete_account_view, name='delete_account'),
+    path('privacy/', account_views.privacy_view, name='privacy'),
     path('', views.planner_view, name='planner'),
     # Окремої сторінки «Ціль» більше нема: старі посилання ведуть на «Раціон» з тими самими параметрами
     path('goal/', RedirectView.as_view(pattern_name='planner', query_string=True)),

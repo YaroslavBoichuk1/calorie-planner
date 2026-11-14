@@ -19,6 +19,7 @@
         {% include 'nutrition/_field.html' with field=form.password1 hint=password_hint %}
         {% include 'nutrition/_field.html' with field=form.password2 %}
         <button type="submit" class="btn btn-accent btn-wide">Створити акаунт</button>
+        <p class="field-hint">Що ми зберігаємо і як усе видалити — на сторінці <a href="{% url 'privacy' %}">«Приватність»</a>.</p>
     </form>
     <p class="auth-switch">Уже є акаунт? <a href="{% url 'login' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Увійти</a></p>
 </div>

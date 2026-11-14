@@ -15,7 +15,7 @@ from django.conf import settings
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase
 from django.urls import reverse
 
-from . import login_limits, silpo, views
+from . import checks, login_limits, silpo, views
 from .models import BoughtList, MealPlan, PlanItem, Product, Profile, Recipe, RecipeIngredient, SilpoClient
 from .planner import (
     DAY_PERCENTAGE, NO_RECIPES_MESSAGE, build_recipe_period, day_totals, meal_totals, period_totals,
@@ -1842,7 +1842,7 @@ class ProductionSettingsTests(RecipeDataMixin, TestCase):
             'check', '--deploy', '--fail-level', 'WARNING',
             DJANGO_SECRET_KEY='test-' + 'x' * 60 + '-not-a-real-key-but-long-enough',
             DJANGO_ALLOWED_HOSTS='racion.example.com', DJANGO_CSRF_TRUSTED_ORIGINS='https://racion.example.com',
-            DJANGO_BEHIND_PROXY='1',
+            DJANGO_BEHIND_PROXY='1', DJANGO_CONTACT_EMAIL='support@example.com',
         )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn('no issues', result.stdout)
@@ -1873,3 +1873,116 @@ class ProductionSettingsTests(RecipeDataMixin, TestCase):
         response = self.client.get('/nope/')
         self.assertEqual(response.status_code, 404)
         self.assertContains(response, 'Такої сторінки немає', status_code=404)
+
+
+class PrivacyTests(TestCase):
+    """Етап 13.8: сторінка «Приватність» і посилання на неї."""
+
+    def test_privacy_page_is_open_to_everyone(self):
+        response = self.client.get(reverse('privacy'))
+        self.assertContains(response, 'Що ми зберігаємо')
+        self.assertContains(response, 'Видалити акаунт')
+
+    def test_contact_email_comes_from_settings(self):
+        with self.settings(CONTACT_EMAIL='support@example.com'):
+            self.assertContains(self.client.get(reverse('privacy')), 'href="mailto:support@example.com"')
+        with self.settings(CONTACT_EMAIL=''):
+            self.assertNotContains(self.client.get(reverse('privacy')), 'mailto:')
+
+    def test_numbers_on_page_match_real_limits(self):
+        html = self.client.get(reverse('privacy')).content.decode()
+        self.assertIn(f'найдовше {settings.SESSION_COOKIE_AGE // 86400} днів', html)
+        self.assertIn(f'{login_limits.LOCKOUT_SECONDS // 60} хвилин', html)
+
+    def test_footer_and_register_page_link_to_privacy(self):
+        link = f'href="{reverse("privacy")}"'
+        self.assertContains(self.client.get(reverse('planner')), link)
+        self.assertContains(self.client.get(reverse('register')), link)
+
+    def test_pages_load_nothing_from_other_sites(self):
+        """Шрифт лежить у проєкті: сторінки не звертаються до Google чи інших чужих серверів."""
+        html = self.client.get(reverse('planner')).content.decode()
+        self.assertNotIn('googleapis', html)
+        self.assertEqual(re.findall(r'<(?:link|script)[^>]+(?:href|src)="https?://[^"]+"', html), [])
+        self.assertIn('nutrition/fonts/onest-cyrillic.woff2', html)
+        css = (settings.BASE_DIR / 'nutrition/static/nutrition/style.css').read_text(encoding='utf-8')
+        for name in re.findall(r"url\('fonts/([^']+)'\)", css):
+            self.assertTrue((settings.BASE_DIR / 'nutrition/static/nutrition/fonts' / name).exists(), name)
+
+    def test_deploy_check_wants_contact_email(self):
+        with self.settings(CONTACT_EMAIL=''):
+            self.assertEqual([w.id for w in checks.contact_email_check(None)], ['nutrition.W001'])
+        with self.settings(CONTACT_EMAIL='support@example.com'):
+            self.assertEqual(checks.contact_email_check(None), [])
+
+
+class DeleteAccountTests(TestCase):
+    """Етап 13.8: видалення акаунта разом з усіма його даними."""
+    PASSWORD = 'Smachnyi-borshch-42'
+
+    def setUp(self):
+        cache.clear()
+        self.user = make_account()
+        self.other = make_account('other@example.com')
+        plan_fields = dict(period='day', days_count=1, calories=2000, protein_pct=30, fat_pct=30, carbs_pct=40)
+        MealPlan.objects.create(name='Мій', owner=self.user, **plan_fields)
+        MealPlan.objects.create(name='Чужий', owner=self.other, **plan_fields)
+        Profile.objects.create(user=self.user, period='day', days=1, calories=1800, protein_pct=30, fat_pct=30, carbs_pct=40)
+        BoughtList.objects.create(user=self.user, key='q:period=day', product_ids=[1])
+        BoughtList.objects.create(user=self.other, key='q:period=day', product_ids=[2])
+        self.client.force_login(self.user)
+
+    def delete(self, password=None):
+        return self.client.post(reverse('delete_account'), {'password': self.PASSWORD if password is None else password})
+
+    def test_guest_is_sent_to_login(self):
+        self.client.logout()
+        response = self.client.get(reverse('delete_account'))
+        self.assertRedirects(response, f"{reverse('login')}?next={reverse('delete_account')}", fetch_redirect_response=False)
+
+    def test_profile_links_to_deletion(self):
+        self.assertContains(self.client.get(reverse('account')), f'href="{reverse("delete_account")}"')
+
+    def test_confirm_page_lists_what_disappears(self):
+        response = self.client.get(reverse('delete_account'))
+        self.assertContains(response, 'збережені раціони <span class="num">(1)</span>')
+        self.assertTrue(get_user_model().objects.filter(pk=self.user.pk).exists())   # сама сторінка нічого не видаляє
+
+    def test_right_password_deletes_account_and_all_its_data(self):
+        session = self.client.session
+        session[silpo.TOKENS_KEY] = {'access_token': 'secret'}
+        session.save()
+        response = self.delete()
+        self.assertRedirects(response, reverse('planner'), fetch_redirect_response=False)
+        self.assertFalse(get_user_model().objects.filter(pk=self.user.pk).exists())
+        self.assertFalse(MealPlan.objects.filter(name='Мій').exists())
+        self.assertFalse(Profile.objects.filter(user_id=self.user.pk).exists())
+        self.assertFalse(BoughtList.objects.filter(user_id=self.user.pk).exists())
+        self.assertNotIn('_auth_user_id', self.client.session)
+        self.assertNotIn(silpo.TOKENS_KEY, self.client.session)
+        self.assertContains(self.client.get(reverse('planner')), 'Акаунт і всі його дані видалено.')
+
+    def test_other_accounts_stay_untouched(self):
+        self.delete()
+        self.assertTrue(get_user_model().objects.filter(pk=self.other.pk).exists())
+        self.assertTrue(MealPlan.objects.filter(name='Чужий', owner=self.other).exists())
+        self.assertTrue(BoughtList.objects.filter(user=self.other).exists())
+
+    def test_wrong_or_empty_password_deletes_nothing(self):
+        for password in ('wrong-password', ''):
+            response = self.delete(password)
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(get_user_model().objects.filter(pk=self.user.pk).exists())
+        self.assertContains(self.delete('wrong-password'), 'Пароль не підходить.')
+        self.assertContains(self.delete(''), 'Вкажи пароль.')
+
+    def test_get_does_not_delete(self):
+        self.client.get(reverse('delete_account'), {'password': self.PASSWORD})
+        self.assertTrue(get_user_model().objects.filter(pk=self.user.pk).exists())
+
+    def test_password_guessing_here_is_limited_like_login(self):
+        for _ in range(login_limits.EMAIL_FAILURE_LIMIT):
+            self.delete('wrong-password')
+        response = self.delete()          # навіть правильний пароль не допомагає, поки діє блокування
+        self.assertContains(response, login_limits.LOCKOUT_MESSAGE)
+        self.assertTrue(get_user_model().objects.filter(pk=self.user.pk).exists())

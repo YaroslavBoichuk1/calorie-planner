@@ -20,5 +20,9 @@
             <button type="submit" class="btn btn-ghost btn-wide">Вийти</button>
         </form>
     </section>
+    <p class="auth-switch account-links">
+        <a href="{% url 'privacy' %}">Приватність</a>
+        <a href="{% url 'delete_account' %}" class="link-danger">Видалити акаунт</a>
+    </p>
 </div>
 {% endblock %}

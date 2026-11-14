@@ -5,8 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Раціон{% endblock %}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preload" href="{% static 'nutrition/fonts/onest-cyrillic.woff2' %}" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="{% static 'nutrition/style.css' %}">
 </head>
 <body>
@@ -28,7 +27,7 @@
 
         {% block content %}{% endblock %}
 
-        <footer class="site-footer">Харчова цінність продуктів: <a href="https://fdc.nal.usda.gov/" target="_blank" rel="noopener">USDA FoodData Central</a>.</footer>
+        <footer class="site-footer">Харчова цінність продуктів: <a href="https://fdc.nal.usda.gov/" target="_blank" rel="noopener">USDA FoodData Central</a> · <a href="{% url 'privacy' %}">Приватність</a></footer>
     </main>
 </div>
 

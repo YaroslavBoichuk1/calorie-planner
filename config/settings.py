@@ -44,6 +44,8 @@ if not SECRET_KEY:
 ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS')
 # Звідки приймати форми через HTTPS, наприклад: https://racion.example.com
 CSRF_TRUSTED_ORIGINS = env_list('DJANGO_CSRF_TRUSTED_ORIGINS')
+# Пошта для питань про дані — показується на сторінці приватності. Перед викладанням обов'язкова.
+CONTACT_EMAIL = os.environ.get('DJANGO_CONTACT_EMAIL', '').strip()
 
 
 INSTALLED_APPS = [

@@ -1,0 +1,31 @@
+{% extends 'nutrition/base.html' %}
+
+{% block title %}Видалення акаунта{% endblock %}
+
+{% block content %}
+<div class="auth">
+    <a class="back-link" href="{% url 'account' %}">← Профіль</a>
+    <header class="page-head">
+        <div>
+            <div class="eyebrow">Повернути не вийде</div>
+            <h1 class="page-title">Видалити акаунт</h1>
+        </div>
+    </header>
+    <form method="post" action="{% url 'delete_account' %}" class="panel auth-form" novalidate>
+        {% csrf_token %}
+        <div class="auth-field">
+            <p class="delete-what">Разом з акаунтом <b>{{ user.email|default:user.username }}</b> зникнуть:</p>
+            <ul class="delete-list">
+                <li>збережені раціони{% if plan_count %} <span class="num">({{ plan_count }})</span>{% endif %};</li>
+                <li>ціль — калорії й пропорція БЖВ;</li>
+                <li>позначки «куплено» у списках покупок;</li>
+                <li>вхід у «Сільпо» в цьому браузері.</li>
+            </ul>
+        </div>
+        {% if blocked %}<p class="form-error" role="alert">{{ blocked }}</p>{% endif %}
+        {% include 'nutrition/_field.html' with field=form.password hint='Введи пароль, щоб підтвердити, що це ти.' %}
+        <button type="submit" class="btn btn-wide btn-delete">Видалити акаунт назавжди</button>
+    </form>
+    <p class="auth-switch"><a href="{% url 'account' %}">Ні, залишити акаунт</a></p>
+</div>
+{% endblock %}

@@ -1,4 +1,4 @@
-"""Форми акаунта: реєстрація й вхід за поштою."""
+"""Форми акаунта: реєстрація, вхід за поштою й видалення акаунта."""
 from django import forms
 from django.contrib.auth import authenticate, get_user_model, password_validation
 from django.core.exceptions import ValidationError
@@ -63,6 +63,21 @@ class RegisterForm(forms.Form):
         """Створює користувача. Пароль Django зберігає лише як хеш."""
         email = self.cleaned_data['email']
         return get_user_model().objects.create_user(username=email, email=email, password=self.cleaned_data['password1'])
+
+
+class DeleteAccountForm(forms.Form):
+    """Підтвердження видалення акаунта паролем: щоб ніхто не стер чужий акаунт із забутого відкритого браузера."""
+    password = password_field('Пароль', 'current-password')
+
+    def __init__(self, user, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+
+    def clean_password(self):
+        password = self.cleaned_data['password']
+        if not self.user.check_password(password):
+            raise ValidationError('Пароль не підходить.')
+        return password
 
 
 class LoginForm(forms.Form):
