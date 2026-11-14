@@ -13,6 +13,7 @@
         <button type="submit" class="default-submit" tabindex="-1" aria-hidden="true">Скласти раціон</button>
         <input type="hidden" name="period" value="{{ period }}">
 
+        <p class="goal-hint">Не знаєш, скільки калорій тобі потрібно? <a href="{% url 'calorie_norm' %}">Порахувати денну норму</a></p>
         <div class="goal-fields">
             <label class="goal-field">
                 <span class="field-label">Калорії на день</span>

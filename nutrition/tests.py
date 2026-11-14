@@ -17,8 +17,8 @@ from django.core import mail
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase
 from django.urls import reverse
 
-from . import checks, login_limits, silpo, views
-from .models import BoughtList, MealPlan, PlanItem, Product, Profile, Recipe, RecipeIngredient, SilpoClient
+from . import checks, energy, login_limits, silpo, views
+from .models import BoughtList, DailyNorm, MealPlan, PlanItem, Product, Profile, Recipe, RecipeIngredient, SilpoClient
 from .planner import (
     DAY_PERCENTAGE, NO_RECIPES_MESSAGE, build_recipe_period, day_totals, meal_totals, period_totals,
 )
@@ -2107,3 +2107,125 @@ class PasswordResetTests(TestCase):
             self.assertEqual([w.id for w in checks.email_check(None)], ['nutrition.W002'])
         with self.settings(EMAIL_HOST='smtp.example.com'):
             self.assertEqual(checks.email_check(None), [])
+
+
+class EnergyFormulaTests(SimpleTestCase):
+    """Формула Міффліна — Сан-Жеора на прикладах, які легко перерахувати вручну."""
+
+    def test_basal_metabolic_rate(self):
+        # 10×80 + 6,25×180 − 5×30 + 5 = 800 + 1125 − 150 + 5
+        self.assertEqual(energy.basal_metabolic_rate('male', 30, 180, 80), 1780)
+        # 10×60 + 6,25×165 − 5×25 − 161 = 600 + 1031,25 − 125 − 161
+        self.assertEqual(energy.basal_metabolic_rate('female', 25, 165, 60), 1345.25)
+
+    def test_goals_change_maintenance_and_round_to_50(self):
+        maintain = energy.daily_norm('male', 30, 180, 80, 'moderate', 'maintain')
+        self.assertEqual(maintain['bmr'], 1780)
+        self.assertEqual(maintain['maintenance'], 2759)                      # 1780 × 1,55
+        self.assertEqual(maintain['target'], 2750)
+        self.assertEqual(energy.daily_norm('male', 30, 180, 80, 'moderate', 'lose')['target'], 2350)   # 2759 × 0,85 = 2345
+        self.assertEqual(energy.daily_norm('male', 30, 180, 80, 'moderate', 'gain')['target'], 3050)   # 2759 × 1,1 = 3035
+
+    def test_losing_never_goes_below_basal_rate(self):
+        # Підставимо «худнути» на 50%: ціль впала б нижче базового обміну
+        with patch.object(energy, 'GOALS', (('lose', 'Схуднути', -0.5, 'Більше білка'),)):
+            result = energy.daily_norm('female', 25, 165, 60, 'sedentary', 'lose')
+        self.assertEqual(result['target'], 1350)                             # 1345,25 → вгору до 50
+
+    def test_warns_when_below_safe_minimum(self):
+        small = energy.daily_norm('female', 70, 150, 45, 'sedentary', 'lose')
+        self.assertTrue(small['below_safe_minimum'])
+        self.assertFalse(energy.daily_norm('male', 30, 180, 80, 'moderate', 'lose')['below_safe_minimum'])
+
+
+class CalorieNormPageTests(TestCase):
+    """Сторінка калькулятора, збереження результату в профіль і посилання на неї."""
+    DATA = {'sex': 'male', 'age': '30', 'height': '180', 'weight': '80', 'activity': 'moderate', 'goal': 'lose'}
+
+    def setUp(self):
+        self.user = make_account()
+
+    def calculate(self, **changes):
+        return self.client.post(reverse('calorie_norm'), {**self.DATA, **changes})
+
+    def test_empty_calculator_opens_for_guests(self):
+        response = self.client.get(reverse('calorie_norm'))
+        self.assertContains(response, 'Денна норма')
+        self.assertContains(response, 'value="maintain" checked')       # мета за замовчуванням
+        self.assertNotContains(response, 'norm-result')
+
+    def test_result_shows_norm_and_links_to_planner(self):
+        response = self.calculate()
+        self.assertContains(response, '2350 <span>ккал на день</span>')
+        self.assertContains(response, '1780 ккал')
+        self.assertContains(response, '−409 ккал')
+        self.assertContains(response, 'Пропорція «Більше білка»')
+        self.assertContains(response, 'href="/?calories=2350&amp;protein_pct=40&amp;fat_pct=30&amp;carbs_pct=30"')
+        self.assertContains(response, 'Увійти, щоб зберегти')           # гість зберегти не може
+
+    def test_decimal_weight_and_form_keeps_answers(self):
+        response = self.calculate(weight='72.5')
+        self.assertContains(response, 'value="72.5"')
+        self.assertContains(response, 'value="moderate" checked')
+
+    def test_body_data_is_not_in_the_address(self):
+        """Вага, зріст, вік і стать ідуть лише POST-ом: в адресах сторінки (посилання, форми) їх нема."""
+        html = self.calculate().content.decode()
+        self.assertIn('method="post" action="/norm/#result"', html)
+        self.assertEqual(re.findall(r'(?:href|action)="[^"]*[?&](?:weight|height|age|sex)=', html), [])
+
+    def test_errors_are_explained(self):
+        response = self.client.post(reverse('calorie_norm'), {'age': '15', 'height': 'abc', 'weight': '500'})
+        self.assertContains(response, 'Обери стать')
+        self.assertContains(response, 'Від 18 до 100 років.')
+        self.assertContains(response, 'Потрібне число.')
+        self.assertContains(response, 'Від 30 до 300 кг.')
+        self.assertNotContains(response, 'norm-result')
+
+    def test_save_keeps_only_the_result(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse('norm_save'), self.DATA)
+        self.assertRedirects(response, reverse('account'), fetch_redirect_response=False)
+        norm = DailyNorm.objects.get(user=self.user)
+        self.assertEqual((norm.calories, norm.maintenance, norm.goal), (2350, 2759, 'lose'))
+        field_names = {field.name for field in DailyNorm._meta.get_fields()}
+        self.assertFalse({'weight', 'height', 'age', 'sex', 'activity'} & field_names)
+
+    def test_save_form_resends_the_same_answers(self):
+        self.client.force_login(self.user)
+        html = self.calculate(weight='72.5').content.decode()
+        save_form = html.split(f'action="{reverse("norm_save")}"')[1].split('</form>')[0]
+        for name, value in {**self.DATA, 'weight': '72.5'}.items():
+            self.assertIn(f'name="{name}" value="{value}"', save_form)
+
+    def test_saving_again_replaces_the_norm(self):
+        self.client.force_login(self.user)
+        self.client.post(reverse('norm_save'), self.DATA)
+        self.client.post(reverse('norm_save'), {**self.DATA, 'goal': 'maintain'})
+        self.assertEqual(DailyNorm.objects.get(user=self.user).calories, 2750)
+
+    def test_save_needs_login_and_valid_data(self):
+        response = self.client.post(reverse('norm_save'), self.DATA)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('login'), response.url)
+        self.client.force_login(self.user)
+        self.client.post(reverse('norm_save'), {**self.DATA, 'age': '5'})
+        self.assertFalse(DailyNorm.objects.exists())
+
+    def test_profile_shows_saved_norm(self):
+        self.client.force_login(self.user)
+        self.assertContains(self.client.get(reverse('account')), 'Порахувати норму')
+        DailyNorm.objects.create(user=self.user, calories=1950, maintenance=2300, goal='lose')
+        response = self.client.get(reverse('account'))
+        self.assertContains(response, '1950 <span>ккал на день</span>')
+        self.assertContains(response, 'Мета — схуднути.')
+        self.assertContains(response, '2300')
+        self.assertContains(response, 'href="/?calories=1950&amp;protein_pct=40&amp;fat_pct=30&amp;carbs_pct=30"')
+
+    def test_norm_disappears_with_account(self):
+        DailyNorm.objects.create(user=self.user, calories=1950, maintenance=2300, goal='lose')
+        self.user.delete()
+        self.assertFalse(DailyNorm.objects.exists())
+
+    def test_goal_panel_links_to_calculator(self):
+        self.assertContains(self.client.get(reverse('planner')), f'href="{reverse("calorie_norm")}"')

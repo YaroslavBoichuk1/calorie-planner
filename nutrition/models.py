@@ -4,6 +4,8 @@ from django.conf import settings
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 
+from .energy import GOALS
+
 MAX_LIST_KEY = 600       # найдовший ключ списку покупок (параметри раціону з адреси)
 class Product(models.Model):
     UNIT_CHOICES = [
@@ -207,3 +209,17 @@ class Profile(models.Model):
             'period': self.period, 'days': self.days, 'calories': self.calories,
             'protein_pct': self.protein_pct, 'fat_pct': self.fat_pct, 'carbs_pct': self.carbs_pct,
         }
+
+
+class DailyNorm(models.Model):
+    """Денна норма калорій з калькулятора — лише результат. Вагу, зріст, вік і стать не зберігаємо."""
+    GOAL_CHOICES = [(key, name) for key, name, _, _ in GOALS]
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='daily_norm')
+    calories = models.PositiveIntegerField()           # ціль під мету
+    maintenance = models.PositiveIntegerField()        # скільки треба, щоб вага не мінялась
+    goal = models.CharField(max_length=10, choices=GOAL_CHOICES)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'{self.user}: {self.calories} ккал ({self.get_goal_display()})'

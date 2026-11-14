@@ -10,6 +10,24 @@
             <h1 class="page-title">Профіль</h1>
         </div>
     </header>
+    <div class="account-stack">
+    <section class="panel" aria-labelledby="norm-title">
+        <div class="auth-field">
+            <h2 class="field-label" id="norm-title">Денна норма калорій</h2>
+            {% if norm %}
+            <div class="account-norm num">{{ norm.calories }} <span>ккал на день</span></div>
+            <p class="field-hint">Мета — {{ norm.get_goal_display|lower }}. Щоб вага не мінялась — <span class="num">{{ norm.maintenance }}</span> ккал. Пораховано <span class="num">{{ norm.updated_at|date:"d.m.Y" }}</span>.</p>
+            {% else %}
+            <p class="field-hint">Ще не пораховано. Калькулятор підкаже, скільки калорій потрібно саме тобі.</p>
+            {% endif %}
+        </div>
+        {% if norm %}
+        <a class="btn btn-accent btn-wide" href="{{ norm_plan_url }}">Скласти раціон з цією нормою</a>
+        <a class="btn btn-ghost btn-wide" href="{% url 'calorie_norm' %}">Перерахувати</a>
+        {% else %}
+        <a class="btn btn-accent btn-wide" href="{% url 'calorie_norm' %}">Порахувати норму</a>
+        {% endif %}
+    </section>
     <section class="panel">
         <div class="auth-field">
             <div class="field-label">Пошта</div>
@@ -20,6 +38,7 @@
             <button type="submit" class="btn btn-ghost btn-wide">Вийти</button>
         </form>
     </section>
+    </div>
     <p class="auth-switch account-links">
         <a href="{% url 'privacy' %}">Приватність</a>
         <a href="{% url 'delete_account' %}" class="link-danger">Видалити акаунт</a>

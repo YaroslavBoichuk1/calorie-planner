@@ -1,9 +1,11 @@
-"""Форми акаунта: реєстрація, вхід за поштою, відновлення пароля й видалення акаунта."""
+"""Форми: акаунт (реєстрація, вхід, відновлення пароля, видалення) і калькулятор денної норми."""
 from django import forms
 from django.contrib.auth import authenticate, get_user_model, password_validation
 from django.contrib.auth.forms import PasswordResetForm, SetPasswordForm
 from django.core.exceptions import ValidationError
 from django.utils import translation
+
+from . import energy
 
 MAX_EMAIL_LENGTH = 150     # пошта лягає в поле username, а воно вміщує 150 символів
 PASSWORD_HINT = 'Щонайменше 8 символів; не лише цифри й не надто простий.'
@@ -121,3 +123,44 @@ class SetNewPasswordForm(SetPasswordForm):
         if not self.has_error('new_password2'):
             self.validate_password_for_user(self.user, 'new_password1')
         return self.cleaned_data
+
+
+def number_field(name, low, high, unit, step=1, decimal=False):
+    """Числове поле калькулятора з українськими повідомленнями про межі."""
+    errors = {
+        'required': f'Вкажи {name.lower()}.',
+        'invalid': 'Потрібне число.',
+        'min_value': f'Від {low} до {high} {unit}.',
+        'max_value': f'Від {low} до {high} {unit}.',
+        'max_digits': 'Задовге число.',
+        'max_decimal_places': 'Досить одного знака після коми.',
+        'max_whole_digits': 'Задовге число.',
+    }
+    label = f'{name}, {unit}'
+    widget = forms.NumberInput(attrs={
+        'class': 'field-input num', 'min': low, 'max': high, 'step': step,
+        'inputmode': 'decimal' if decimal else 'numeric',
+    })
+    if decimal:
+        return forms.DecimalField(label=label, min_value=low, max_value=high, max_digits=4, decimal_places=1,
+                                  error_messages=errors, widget=widget)
+    return forms.IntegerField(label=label, min_value=low, max_value=high, error_messages=errors, widget=widget)
+
+
+class NormForm(forms.Form):
+    """Калькулятор денної норми. Дані потрібні лише для розрахунку й ніде не зберігаються."""
+    sex = forms.ChoiceField(label='Стать', choices=energy.SEXES, widget=forms.RadioSelect,
+                            error_messages={'required': 'Обери стать: від неї залежить формула.'})
+    age = number_field('Вік', energy.MIN_AGE, energy.MAX_AGE, 'років')
+    height = number_field('Зріст', energy.MIN_HEIGHT, energy.MAX_HEIGHT, 'см')
+    weight = number_field('Вага', energy.MIN_WEIGHT, energy.MAX_WEIGHT, 'кг', step='0.1', decimal=True)
+    activity = forms.ChoiceField(label='Активність', choices=[(key, name) for key, name, _, _ in energy.ACTIVITY_LEVELS],
+                                 widget=forms.RadioSelect, error_messages={'required': 'Обери рівень активності.'})
+    goal = forms.ChoiceField(label='Мета', choices=[(key, name) for key, name, _, _ in energy.GOALS], initial='maintain',
+                             widget=forms.RadioSelect, error_messages={'required': 'Обери мету.'})
+
+    def result(self):
+        """Розрахунок для перевіреної форми (див. energy.daily_norm)."""
+        data = self.cleaned_data
+        return energy.daily_norm(data['sex'], data['age'], data['height'], float(data['weight']),
+                                 data['activity'], data['goal'])

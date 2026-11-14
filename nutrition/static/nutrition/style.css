@@ -495,3 +495,59 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     .plate, .meal-card, .ring-arc { transition: none; }
     .meal-card:hover .plate { transform: none; }
 }
+
+/* === Калькулятор денної норми === */
+.norm { max-width: 760px; display: flex; flex-direction: column; gap: 20px; }
+.norm .page-head { margin-bottom: 0; }
+.norm-form { gap: 22px; }
+.norm-numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.choice-group { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.choice-group legend { padding: 0; margin-bottom: 10px; }
+.choices { display: grid; gap: 8px; }
+.choices-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.choices-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.choice { position: relative; display: flex; cursor: pointer; }
+.choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.choice-body {
+    flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 52px; padding: 10px 16px;
+    border-radius: 16px; background: var(--soft); border: 2px solid transparent; transition: background 0.15s, border-color 0.15s;
+}
+.choice:hover .choice-body { background: var(--border); }
+.choice input:checked + .choice-body { background: var(--ink); color: #FFFFFF; }
+.choice input:checked + .choice-body .choice-hint { color: rgba(255, 255, 255, 0.75); }
+.choice input:focus-visible + .choice-body { border-color: var(--accent); }
+.choice-name { font-weight: 800; }
+.choice-hint { font-size: 14px; color: var(--muted-strong); line-height: 1.35; }
+.choices-2 .choice-body, .choices-3 .choice-body { align-items: center; text-align: center; }
+
+.norm-result { gap: 14px; scroll-margin-top: 16px; }
+.norm-result-label { font-size: 14px; font-weight: 700; color: rgba(255, 255, 255, 0.7); }
+.norm-target { margin: 0; font-size: 56px; font-weight: 800; letter-spacing: -0.035em; line-height: 1; }
+.norm-target span { font-size: 18px; font-weight: 600; letter-spacing: 0; color: rgba(255, 255, 255, 0.7); }
+.norm-facts { margin: 4px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.norm-facts div { padding: 12px 14px; border-radius: 16px; background: rgba(255, 255, 255, 0.08); }
+.norm-facts dt { font-size: 13px; color: rgba(255, 255, 255, 0.7); }
+.norm-facts dd { margin: 2px 0 0; font-size: 18px; font-weight: 800; }
+.norm-macros { margin: 0; color: rgba(255, 255, 255, 0.85); line-height: 1.6; }
+.norm-macros span { white-space: nowrap; }
+.norm-warning { margin: 0; padding: 12px 16px; border-radius: 16px; background: #FFF1EC; color: #9A3412; font-size: 14px; font-weight: 600; line-height: 1.5; }
+.norm-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.norm-actions form { display: contents; }
+.norm-saved-note { margin: 0; color: var(--muted-strong); }
+.norm-how { padding: 16px 20px; border-radius: 20px; background: var(--card); box-shadow: var(--shadow); color: var(--muted-strong); line-height: 1.6; }
+.norm-how summary { cursor: pointer; font-weight: 800; color: var(--ink); }
+.norm-how ol { padding-left: 20px; }
+.norm-how b { color: var(--ink); }
+.goal-hint { margin: 0; font-size: 14px; color: var(--muted-strong); }
+.goal-hint a { color: var(--protein); font-weight: 700; }
+.account-stack { display: flex; flex-direction: column; gap: 16px; }
+.account-norm { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; }
+.account-norm span { font-size: 16px; font-weight: 600; letter-spacing: 0; color: var(--muted-strong); }
+
+@media (max-width: 600px) {
+    .norm-numbers { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .choices-3 { grid-template-columns: 1fr; }
+    .norm-facts { grid-template-columns: 1fr; }
+    .norm-target { font-size: 44px; }
+    .norm-actions .btn { flex: 1 1 100%; }
+}

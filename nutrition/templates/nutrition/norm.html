@@ -1,0 +1,100 @@
+{% extends 'nutrition/base.html' %}
+{% load l10n %}
+
+{% block title %}Денна норма калорій{% endblock %}
+
+{% block content %}
+<div class="norm">
+    <header class="page-head">
+        <div>
+            <div class="eyebrow">Скільки калорій потрібно саме тобі</div>
+            <h1 class="page-title">Денна норма</h1>
+        </div>
+    </header>
+
+    {% if result %}
+    <section class="panel panel-dark norm-result" aria-labelledby="norm-result-title" id="result">
+        <div class="norm-result-label">Мета: {{ goal_name|lower }}</div>
+        <h2 class="norm-target num" id="norm-result-title">{{ result.target }} <span>ккал на день</span></h2>
+        <dl class="norm-facts">
+            <div><dt>Базовий обмін</dt><dd class="num">{{ result.bmr }} ккал</dd></div>
+            <div><dt>Щоб вага не мінялась</dt><dd class="num">{{ result.maintenance }} ккал</dd></div>
+            <div><dt>Різниця</dt><dd class="num">{{ change_text }} ккал</dd></div>
+        </dl>
+        <p class="norm-macros">Пропорція «{{ preset_name }}»:
+            {% for m in macros %}<span class="num">{{ m.name|lower }} {{ m.grams }} г{% if not forloop.last %} ·{% endif %}</span>{% if not forloop.last %} {% endif %}{% endfor %}</p>
+        {% if result.below_safe_minimum %}
+        <p class="norm-warning" role="note">Менше ніж {{ result.safe_minimum }} ккал на день без нагляду лікаря зазвичай не радять. Якщо худнеш на такій нормі — краще порадься з лікарем.</p>
+        {% endif %}
+        <div class="norm-actions">
+            <a class="btn btn-accent" href="{{ planner_url }}">Скласти раціон</a>
+            {% if user.is_authenticated %}
+            <form method="post" action="{% url 'norm_save' %}">
+                {% csrf_token %}
+                {% for field in form %}<input type="hidden" name="{{ field.name }}" value="{{ field.value|unlocalize }}">{% endfor %}
+                <button type="submit" class="btn btn-light">Зберегти в профіль</button>
+            </form>
+            {% else %}
+            <a class="btn btn-light" href="{% url 'login' %}?next={% url 'calorie_norm' %}">Увійти, щоб зберегти</a>
+            {% endif %}
+        </div>
+    </section>
+    {% elif saved %}
+    <p class="norm-saved-note">Збережена норма: <b class="num">{{ saved.calories }} ккал</b> ({{ saved.get_goal_display|lower }}), пораховано <span class="num">{{ saved.updated_at|date:"d.m.Y" }}</span>.</p>
+    {% endif %}
+
+    <form method="post" action="{% url 'calorie_norm' %}#result" class="panel norm-form" novalidate>
+        {% csrf_token %}
+        <fieldset class="choice-group">
+            <legend class="field-label">Стать</legend>
+            <div class="choices choices-2">
+                {% for key, name in sexes %}
+                <label class="choice"><input type="radio" name="sex" value="{{ key }}"{% if form.sex.value == key %} checked{% endif %}><span class="choice-body"><span class="choice-name">{{ name }}</span></span></label>
+                {% endfor %}
+            </div>
+            {% for error in form.sex.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+        </fieldset>
+
+        <div class="norm-numbers">
+            {% include 'nutrition/_field.html' with field=form.age %}
+            {% include 'nutrition/_field.html' with field=form.height %}
+            {% include 'nutrition/_field.html' with field=form.weight %}
+        </div>
+
+        <fieldset class="choice-group">
+            <legend class="field-label">Активність</legend>
+            <div class="choices">
+                {% for key, name, hint in activity_levels %}
+                <label class="choice"><input type="radio" name="activity" value="{{ key }}"{% if form.activity.value == key %} checked{% endif %}><span class="choice-body"><span class="choice-name">{{ name }}</span><span class="choice-hint">{{ hint }}</span></span></label>
+                {% endfor %}
+            </div>
+            {% for error in form.activity.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+        </fieldset>
+
+        <fieldset class="choice-group">
+            <legend class="field-label">Мета</legend>
+            <div class="choices choices-3">
+                {% for key, name in goals %}
+                <label class="choice"><input type="radio" name="goal" value="{{ key }}"{% if form.goal.value == key %} checked{% endif %}><span class="choice-body"><span class="choice-name">{{ name }}</span></span></label>
+                {% endfor %}
+            </div>
+            {% for error in form.goal.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+        </fieldset>
+
+        <button type="submit" class="btn btn-accent btn-wide">{% if result %}Порахувати ще раз{% else %}Порахувати{% endif %}</button>
+        <p class="field-hint">Вагу, зріст, вік і стать ми не зберігаємо: вони потрібні лише для розрахунку. У профіль можна зберегти тільки результат.</p>
+    </form>
+
+    <details class="norm-how">
+        <summary>Як це рахується</summary>
+        <ol>
+            <li><b>Базовий обмін</b> — скільки організм витрачає в повному спокої. Формула Міффліна — Сан-Жеора:
+                10 × вага + 6,25 × зріст − 5 × вік, і ще +5 для чоловіків або −161 для жінок.</li>
+            <li><b>Норма для підтримки ваги</b> — базовий обмін × коефіцієнт активності (від 1,2 до 1,9).</li>
+            <li><b>Ціль</b>: щоб схуднути — на 15% менше, щоб набрати — на 10% більше. Округлюємо до 50 ккал і не опускаємо нижче базового обміну.</li>
+        </ol>
+        <p>Це оцінка: у різних людей обмін речовин відрізняється на 10% і більше. Стеж за вагою 2–3 тижні й підправ норму.
+            Формула не підходить дітям, вагітним, під час годування груддю і при хворобах, що впливають на обмін речовин — тоді норму краще визначити з лікарем.</p>
+    </details>
+</div>
+{% endblock %}

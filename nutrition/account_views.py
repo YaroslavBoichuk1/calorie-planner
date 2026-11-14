@@ -15,6 +15,8 @@ from . import login_limits
 from .forms import (
     PASSWORD_HINT, DeleteAccountForm, LoginForm, RegisterForm, ResetRequestForm, SetNewPasswordForm, normalize_email,
 )
+from .models import DailyNorm
+from .norm_views import norm_plan_url
 from .views import move_session_bought, safe_next_url
 
 # Коли востаннє мінявся текст сторінки «Приватність». Міняєш текст — онови дату.
@@ -140,8 +142,12 @@ class ResetConfirmView(PasswordResetConfirmView):
 
 @login_required
 def account_view(request):
-    """Профіль: хто увійшов, кнопки «Вийти» й «Видалити акаунт»."""
-    return render(request, 'nutrition/account.html')
+    """Профіль: денна норма калорій, пошта, кнопки «Вийти» й «Видалити акаунт»."""
+    norm = DailyNorm.objects.filter(user=request.user).first()
+    return render(request, 'nutrition/account.html', {
+        'norm': norm,
+        'norm_plan_url': norm_plan_url(norm.calories, norm.goal) if norm else '',
+    })
 
 
 @login_required
