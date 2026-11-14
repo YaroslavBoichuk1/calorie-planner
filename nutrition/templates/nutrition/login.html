@@ -18,6 +18,7 @@
         {% include 'nutrition/_field.html' with field=form.email %}
         {% include 'nutrition/_field.html' with field=form.password %}
         <button type="submit" class="btn btn-accent btn-wide">Увійти</button>
+        <a class="forgot-link" href="{% url 'password_reset' %}">Не пам’ятаєш пароль?</a>
     </form>
     <p class="auth-switch">Ще нема акаунта? <a href="{% url 'register' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Зареєструватися</a></p>
 </div>

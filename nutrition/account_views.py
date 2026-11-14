@@ -1,17 +1,20 @@
-"""Сторінки акаунта: реєстрація, вхід, вихід, профіль, видалення акаунта й приватність."""
+"""Сторінки акаунта: реєстрація, вхід, вихід, відновлення пароля, профіль, видалення акаунта й приватність."""
 from datetime import date
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import PasswordResetConfirmView, PasswordResetView
 from django.db import IntegrityError, transaction
 from django.shortcuts import redirect, render
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 from django.views.decorators.http import require_POST
 
 from . import login_limits
-from .forms import PASSWORD_HINT, DeleteAccountForm, LoginForm, RegisterForm, normalize_email
+from .forms import (
+    PASSWORD_HINT, DeleteAccountForm, LoginForm, RegisterForm, ResetRequestForm, SetNewPasswordForm, normalize_email,
+)
 from .views import move_session_bought, safe_next_url
 
 # Коли востаннє мінявся текст сторінки «Приватність». Міняєш текст — онови дату.
@@ -85,6 +88,54 @@ def logout_view(request):
     logout(request)
     messages.success(request, 'Вихід з акаунта виконано.')
     return redirect('planner')
+
+
+class ResetRequestView(PasswordResetView):
+    """Відновлення, крок 1: людина вводить пошту, і якщо такий акаунт є, Django надсилає лист з одноразовим посиланням.
+
+    Відповідь однакова, є акаунт чи нема, — щоб через цю форму не можна було перевіряти, хто зареєстрований.
+    """
+    template_name = 'nutrition/password_reset.html'
+    form_class = ResetRequestForm
+    subject_template_name = 'nutrition/emails/password_reset_subject.txt'
+    email_template_name = 'nutrition/emails/password_reset.txt'
+    success_url = reverse_lazy('password_reset_sent')
+    extra_email_context = {'valid_minutes': settings.PASSWORD_RESET_TIMEOUT // 60}
+
+    def form_valid(self, form):
+        email, ip = form.cleaned_data['email'], login_limits.client_ip(self.request)
+        if login_limits.reset_blocked(email, ip):
+            form.add_error(None, login_limits.RESET_LIMIT_MESSAGE)
+            return self.form_invalid(form)
+        login_limits.record_reset(email, ip)
+        return super().form_valid(form)
+
+
+def reset_sent_view(request):
+    """Відновлення, крок 1½: «перевір пошту»."""
+    return render(request, 'nutrition/password_reset_sent.html', {'valid_minutes': settings.PASSWORD_RESET_TIMEOUT // 60})
+
+
+class ResetConfirmView(PasswordResetConfirmView):
+    """Відновлення, крок 2: посилання з листа → новий пароль → одразу вхід.
+
+    Django спершу перекладає ключ з адреси в сесію й перенаправляє на адресу без нього — щоб ключ не витік далі.
+    Інші браузери, де був вхід зі старим паролем, після зміни пароля автоматично виходять з акаунта.
+    """
+    template_name = 'nutrition/password_reset_confirm.html'
+    form_class = SetNewPasswordForm
+    post_reset_login = True
+    success_url = reverse_lazy('planner')
+
+    def get_context_data(self, **kwargs):
+        return {**super().get_context_data(**kwargs), 'password_hint': PASSWORD_HINT}
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        login_limits.clear_login_failures(self.user.username)    # старі невдалі спроби входу вже не важливі
+        move_session_bought(self.request)
+        messages.success(self.request, 'Пароль змінено, вхід виконано.')
+        return response
 
 
 @login_required

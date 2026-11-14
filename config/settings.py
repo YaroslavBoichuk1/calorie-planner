@@ -122,6 +122,24 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 LOGIN_URL = 'login'
+# Посилання для відновлення пароля діє годину і стає недійсним, щойно пароль змінено.
+PASSWORD_RESET_TIMEOUT = 60 * 60
+
+
+# Пошта (листи для відновлення пароля). На сервері — через поштовий сервіс за SMTP (DJANGO_EMAIL_*).
+# Локально листи не відправляються, а друкуються в терміналі, де запущено сервер.
+DEFAULT_FROM_EMAIL = os.environ.get('DJANGO_FROM_EMAIL', 'Раціон <noreply@localhost>')
+EMAIL_HOST = os.environ.get('DJANGO_EMAIL_HOST', '')
+if EMAIL_HOST:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_PORT = int(os.environ.get('DJANGO_EMAIL_PORT', '587'))
+    EMAIL_HOST_USER = os.environ.get('DJANGO_EMAIL_USER', '')
+    EMAIL_HOST_PASSWORD = os.environ.get('DJANGO_EMAIL_PASSWORD', '')
+    EMAIL_USE_SSL = EMAIL_PORT == 465          # порт 465 — одразу зашифроване з'єднання
+    EMAIL_USE_TLS = not EMAIL_USE_SSL          # 587 — шифрування вмикається після підключення (STARTTLS)
+    EMAIL_TIMEOUT = 10
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 
 # Мова й час. Українською — повідомлення Django й адмінка, а дробові числа пишуться з комою («12,5 грн»).

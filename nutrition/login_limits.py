@@ -1,4 +1,4 @@
-"""Захист від підбору пароля й масової реєстрації: рахуємо невдалі спроби й тимчасово блокуємо.
+"""Захист від підбору пароля, масової реєстрації й засипання чужої пошти листами: рахуємо невдалі спроби й тимчасово блокуємо.
 
 Лічильники лежать у кеші Django. Кожен лічильник живе LOCKOUT_SECONDS від першої спроби, потім зникає сам.
 """
@@ -12,8 +12,12 @@ IP_FAILURE_LIMIT = 30          # невдалих входів з однієї �
 REGISTER_LIMIT = 10            # нових акаунтів з однієї адреси
 LOCKOUT_SECONDS = 15 * 60      # на скільки блокуємо
 REGISTER_WINDOW_SECONDS = 60 * 60
+RESET_EMAIL_LIMIT = 3          # листів для відновлення пароля на одну пошту за годину
+RESET_IP_LIMIT = 10            # запитів на відновлення з однієї адреси за годину
+RESET_WINDOW_SECONDS = 60 * 60
 LOCKOUT_MESSAGE = 'Забагато невдалих спроб входу. Спробуй ще раз за 15 хвилин.'
 REGISTER_LIMIT_MESSAGE = 'Забагато нових акаунтів з цієї мережі. Спробуй ще раз за годину.'
+RESET_LIMIT_MESSAGE = 'Забагато запитів на відновлення пароля. Спробуй ще раз за годину.'
 
 
 def client_ip(request):
@@ -69,3 +73,13 @@ def register_blocked(ip):
 
 def record_registration(ip):
     _bump('register-ip', ip, REGISTER_WINDOW_SECONDS)
+
+
+def reset_blocked(email, ip):
+    """Чи вичерпано ліміт листів для відновлення. Рахуємо й неіснуючі пошти — так не видно, які зареєстровані."""
+    return _count('reset-email', email) >= RESET_EMAIL_LIMIT or _count('reset-ip', ip) >= RESET_IP_LIMIT
+
+
+def record_reset(email, ip):
+    _bump('reset-email', email, RESET_WINDOW_SECONDS)
+    _bump('reset-ip', ip, RESET_WINDOW_SECONDS)

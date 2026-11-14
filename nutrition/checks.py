@@ -13,3 +13,15 @@ def contact_email_check(app_configs, **kwargs):
         hint='Додай DJANGO_CONTACT_EMAIL=... у .env на сервері.',
         id='nutrition.W001',
     )]
+
+
+@register(Tags.security, deploy=True)
+def email_check(app_configs, **kwargs):
+    """Без поштового сервісу листи для відновлення пароля просто друкуються в журнал і до людей не доходять."""
+    if settings.EMAIL_HOST:
+        return []
+    return [Warning(
+        'Не задано DJANGO_EMAIL_HOST: листи для відновлення пароля не відправлятимуться.',
+        hint='Додай у .env на сервері DJANGO_EMAIL_HOST, DJANGO_EMAIL_USER, DJANGO_EMAIL_PASSWORD і DJANGO_FROM_EMAIL.',
+        id='nutrition.W002',
+    )]

@@ -4,6 +4,7 @@ import re
 import json
 import subprocess
 import sys
+from datetime import datetime, timedelta
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -12,6 +13,7 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.management import CommandError, call_command
 from django.conf import settings
+from django.core import mail
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase
 from django.urls import reverse
 
@@ -1842,7 +1844,7 @@ class ProductionSettingsTests(RecipeDataMixin, TestCase):
             'check', '--deploy', '--fail-level', 'WARNING',
             DJANGO_SECRET_KEY='test-' + 'x' * 60 + '-not-a-real-key-but-long-enough',
             DJANGO_ALLOWED_HOSTS='racion.example.com', DJANGO_CSRF_TRUSTED_ORIGINS='https://racion.example.com',
-            DJANGO_BEHIND_PROXY='1', DJANGO_CONTACT_EMAIL='support@example.com',
+            DJANGO_BEHIND_PROXY='1', DJANGO_CONTACT_EMAIL='support@example.com', DJANGO_EMAIL_HOST='smtp.example.com',
         )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn('no issues', result.stdout)
@@ -1986,3 +1988,122 @@ class DeleteAccountTests(TestCase):
         response = self.delete()          # навіть правильний пароль не допомагає, поки діє блокування
         self.assertContains(response, login_limits.LOCKOUT_MESSAGE)
         self.assertTrue(get_user_model().objects.filter(pk=self.user.pk).exists())
+
+
+class PasswordResetTests(TestCase):
+    """Відновлення пароля поштою: лист з одноразовим посиланням → новий пароль → вхід."""
+    OLD = 'Smachnyi-borshch-42'
+    NEW = 'Novyi-vareny-kartopli-7'
+
+    def setUp(self):
+        cache.clear()
+        self.user = make_account()
+
+    def request_reset(self, email='cook@example.com', **extra):
+        return self.client.post(reverse('password_reset'), {'email': email}, **extra)
+
+    def link_from_email(self, message=None):
+        message = message or mail.outbox[-1]
+        return re.search(r'https?://testserver(/accounts/reset/\S+/)', message.body).group(1)
+
+    def test_login_page_links_to_reset(self):
+        self.assertContains(self.client.get(reverse('login')), f'href="{reverse("password_reset")}"')
+
+    def test_existing_account_gets_a_letter_with_link(self):
+        response = self.request_reset('  Cook@Example.COM ')
+        self.assertRedirects(response, reverse('password_reset_sent'), fetch_redirect_response=False)
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.to, ['cook@example.com'])
+        self.assertEqual(message.subject, 'Відновлення пароля — Раціон')
+        self.assertIn('Посилання діє 60 хвилин', message.body)
+        self.assertNotIn('&amp;', message.body)          # текстовий лист без HTML-екранування
+        self.link_from_email(message)
+
+    def test_unknown_email_looks_the_same_but_sends_nothing(self):
+        response = self.request_reset('nobody@example.com')
+        self.assertRedirects(response, reverse('password_reset_sent'), fetch_redirect_response=False)
+        self.assertEqual(mail.outbox, [])
+
+    def test_sent_page_says_how_long_link_works(self):
+        self.assertContains(self.client.get(reverse('password_reset_sent')), '<span class="num">60</span> хвилин')
+
+    def test_full_reset_logs_in_with_new_password(self):
+        self.request_reset()
+        response = self.client.get(self.link_from_email())
+        set_password_url = response.url                     # ключ з адреси переїхав у сесію
+        self.assertNotIn(mail.outbox[0].body.split('/')[-2], set_password_url)
+        self.assertContains(self.client.get(set_password_url), 'Новий пароль')
+        response = self.client.post(set_password_url, {'new_password1': self.NEW, 'new_password2': self.NEW})
+        self.assertRedirects(response, reverse('planner'), fetch_redirect_response=False)
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.NEW))
+        self.assertContains(self.client.get(reverse('planner')), 'Пароль змінено, вхід виконано.')
+
+    def test_link_works_only_once(self):
+        self.request_reset()
+        link = self.link_from_email()
+        url = self.client.get(link).url
+        self.client.post(url, {'new_password1': self.NEW, 'new_password2': self.NEW})
+        self.client.logout()
+        response = self.client.get(link, follow=True)
+        self.assertContains(response, 'Посилання не діє')
+
+    def test_link_expires(self):
+        self.request_reset()
+        link = self.link_from_email()
+        later = datetime.now() + timedelta(seconds=settings.PASSWORD_RESET_TIMEOUT + 60)
+        with patch('django.contrib.auth.tokens.PasswordResetTokenGenerator._now', return_value=later):
+            self.assertContains(self.client.get(link, follow=True), 'Посилання не діє')
+
+    def test_broken_link_is_rejected(self):
+        self.assertContains(self.client.get('/accounts/reset/MQ/abc-123/', follow=True), 'Посилання не діє')
+
+    def test_weak_or_mismatched_password_is_refused(self):
+        self.request_reset()
+        url = self.client.get(self.link_from_email()).url
+        response = self.client.post(url, {'new_password1': '12345678', 'new_password2': '12345678'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'aria-invalid')
+        response = self.client.post(url, {'new_password1': self.NEW, 'new_password2': self.NEW + 'x'})
+        self.assertContains(response, 'Паролі не збігаються.')
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.OLD))
+
+    def test_other_browsers_are_logged_out_after_reset(self):
+        other_browser = Client()
+        other_browser.force_login(self.user)
+        self.request_reset()
+        url = self.client.get(self.link_from_email()).url
+        self.client.post(url, {'new_password1': self.NEW, 'new_password2': self.NEW})
+        response = other_browser.get(reverse('plan_list'))
+        self.assertEqual(response.status_code, 302)          # старий вхід більше не діє → на сторінку входу
+        self.assertIn(reverse('login'), response.url)
+
+    def test_reset_clears_login_lockout(self):
+        for _ in range(login_limits.EMAIL_FAILURE_LIMIT):
+            login_limits.record_login_failure('cook@example.com', '127.0.0.1')
+        self.request_reset()
+        url = self.client.get(self.link_from_email()).url
+        self.client.post(url, {'new_password1': self.NEW, 'new_password2': self.NEW})
+        self.assertFalse(login_limits.login_blocked('cook@example.com', '10.0.0.9'))
+
+    def test_too_many_letters_to_one_email_are_refused(self):
+        for _ in range(login_limits.RESET_EMAIL_LIMIT):
+            self.request_reset()
+        response = self.request_reset()
+        self.assertContains(response, login_limits.RESET_LIMIT_MESSAGE)
+        self.assertEqual(len(mail.outbox), login_limits.RESET_EMAIL_LIMIT)
+
+    def test_limit_counts_unknown_emails_too(self):
+        """Інакше за тим, де з'являється обмеження, можна було б вгадати, які пошти зареєстровані."""
+        for _ in range(login_limits.RESET_EMAIL_LIMIT):
+            self.request_reset('nobody@example.com')
+        self.assertContains(self.request_reset('nobody@example.com'), login_limits.RESET_LIMIT_MESSAGE)
+
+    def test_deploy_check_wants_email_service(self):
+        with self.settings(EMAIL_HOST=''):
+            self.assertEqual([w.id for w in checks.email_check(None)], ['nutrition.W002'])
+        with self.settings(EMAIL_HOST='smtp.example.com'):
+            self.assertEqual(checks.email_check(None), [])

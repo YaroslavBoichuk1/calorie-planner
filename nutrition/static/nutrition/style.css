@@ -270,6 +270,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .auth-switch { margin: 16px 0 0; font-size: 15px; color: var(--muted-strong); }
 .auth-switch a { color: var(--protein); font-weight: 700; }
 .account-email { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+.forgot-link { align-self: center; font-size: 15px; font-weight: 700; color: var(--protein); }
+.auth-text p { margin: 0; line-height: 1.6; color: var(--muted-strong); }
+.auth-text a:not(.btn) { color: var(--protein); font-weight: 700; }
 .account-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; }
 .auth-switch a.link-danger { color: #C2410C; }
 .field-hint a { color: var(--protein); font-weight: 700; }

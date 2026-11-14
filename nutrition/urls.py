@@ -8,6 +8,9 @@ urlpatterns = [
     path('accounts/login/', account_views.login_view, name='login'),
     path('accounts/logout/', account_views.logout_view, name='logout'),
     path('accounts/delete/', account_views.delete_account_view, name='delete_account'),
+    path('accounts/password-reset/', account_views.ResetRequestView.as_view(), name='password_reset'),
+    path('accounts/password-reset/sent/', account_views.reset_sent_view, name='password_reset_sent'),
+    path('accounts/reset/<uidb64>/<token>/', account_views.ResetConfirmView.as_view(), name='password_reset_confirm'),
     path('privacy/', account_views.privacy_view, name='privacy'),
     path('', views.planner_view, name='planner'),
     # Окремої сторінки «Ціль» більше нема: старі посилання ведуть на «Раціон» з тими самими параметрами

@@ -1,6 +1,7 @@
-"""Форми акаунта: реєстрація, вхід за поштою й видалення акаунта."""
+"""Форми акаунта: реєстрація, вхід за поштою, відновлення пароля й видалення акаунта."""
 from django import forms
 from django.contrib.auth import authenticate, get_user_model, password_validation
+from django.contrib.auth.forms import PasswordResetForm, SetPasswordForm
 from django.core.exceptions import ValidationError
 from django.utils import translation
 
@@ -98,3 +99,25 @@ class LoginForm(forms.Form):
                 # Не уточнюємо, що саме не так: інакше можна було б дізнатися, які пошти зареєстровані
                 raise ValidationError('Неправильна пошта або пароль.')
         return cleaned
+
+
+class ResetRequestForm(PasswordResetForm):
+    """Крок 1 відновлення: пошта, на яку надіслати посилання. Сам лист складає й надсилає Django."""
+    email = email_field()
+
+    def clean_email(self):
+        return normalize_email(self.cleaned_data['email'])
+
+
+class SetNewPasswordForm(SetPasswordForm):
+    """Крок 2 відновлення: новий пароль двічі (з тими самими вимогами, що й при реєстрації)."""
+    new_password1 = password_field('Новий пароль', 'new-password')
+    new_password2 = password_field('Новий пароль ще раз', 'new-password')
+    error_messages = {'password_mismatch': 'Паролі не збігаються.'}
+
+    def clean(self):
+        # Помилки вимог показуємо під першим полем, як на реєстрації (у Django вони під другим)
+        self.validate_passwords('new_password1', 'new_password2')
+        if not self.has_error('new_password2'):
+            self.validate_password_for_user(self.user, 'new_password1')
+        return self.cleaned_data
