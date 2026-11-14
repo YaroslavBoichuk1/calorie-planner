@@ -10,6 +10,7 @@ from django.views.decorators.http import require_POST
 from . import energy
 from .forms import NormForm
 from .models import DailyNorm
+from .planner import MIN_DAY_CALORIES
 from .views import MACROS, PRESETS
 
 
@@ -20,9 +21,12 @@ def suggested_preset(goal):
 
 
 def norm_plan_url(calories, goal):
-    """Посилання на «Раціон» з цією нормою і підказаною пропорцією БЖВ."""
+    """Посилання на «Раціон» з цією нормою і підказаною пропорцією БЖВ.
+
+    Раціон нижче MIN_DAY_CALORIES не складається, тож меншу норму піднімаємо до цієї межі.
+    """
     _, protein, fat, carbs = suggested_preset(goal)
-    query = {'calories': calories, 'protein_pct': protein, 'fat_pct': fat, 'carbs_pct': carbs}
+    query = {'calories': max(calories, MIN_DAY_CALORIES), 'protein_pct': protein, 'fat_pct': fat, 'carbs_pct': carbs}
     return f"{reverse('planner')}?{urlencode(query)}"
 
 
@@ -60,6 +64,8 @@ def norm_view(request):
                 for (_, name, kcal), pct in zip(MACROS, percents)
             ],
             'planner_url': norm_plan_url(result['target'], goal),
+            'below_planner_minimum': result['target'] < MIN_DAY_CALORIES,
+            'min_day_calories': MIN_DAY_CALORIES,
         })
     return render(request, 'nutrition/norm.html', context)
 

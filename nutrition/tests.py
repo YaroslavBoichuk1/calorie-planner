@@ -274,8 +274,8 @@ class RecipeEngineTests(RecipeDataMixin, TestCase):
             self.assertAlmostEqual(day_totals(day_info['day'])['calories'], 2000)
 
     def test_portions_scale_to_calories(self):
-        small = self.build(days_count=1, calories=1000)[0]['day']
-        large = self.build(days_count=1, calories=2000)[0]['day']
+        small = self.build(days_count=1, calories=1200)[0]['day']
+        large = self.build(days_count=1, calories=2400)[0]['day']
         self.assertEqual(menu({'day': small}), menu({'day': large}))
         self.assertAlmostEqual(large[0]['meal'][0]['grams'], small[0]['meal'][0]['grams'] * 2)
 
@@ -836,10 +836,10 @@ class SilpoPricesTests(TestCase):
     def test_page_shows_prices_and_never_the_token(self):
         self.connect_browser()
         with patch('nutrition.views.silpo.McpConnection', return_value=self.connection()):
-            response = self.client.get(reverse('silpo_prices'), {'calories': '1000'})
+            response = self.client.get(reverse('silpo_prices'), {'calories': '1500'})
         self.assertContains(response, 'Крупа гречана')
         self.assertContains(response, 'Не знайдено в цьому магазині')
-        self.assertContains(response, 'href="/?calories=1000"')
+        self.assertContains(response, 'href="/?calories=1500"')
         self.assertNotContains(response, 'access-secret')
 
     def test_page_handles_bad_targets_and_silpo_errors(self):
@@ -2226,6 +2226,18 @@ class CalorieNormPageTests(TestCase):
         DailyNorm.objects.create(user=self.user, calories=1950, maintenance=2300, goal='lose')
         self.user.delete()
         self.assertFalse(DailyNorm.objects.exists())
+
+    def test_norm_below_planner_minimum_opens_plan_with_minimum(self):
+        response = self.calculate(sex='female', age='70', height='150', weight='45', activity='sedentary')
+        self.assertContains(response, '900 <span>ккал на день</span>')      # розрахунок показуємо чесно
+        self.assertContains(response, 'Раціон складаємо щонайменше на 1200 ккал')
+        self.assertContains(response, 'href="/?calories=1200&amp;')
+        self.assertContains(response, 'Менше ніж 1200 ккал на день без нагляду лікаря')
+
+    def test_planner_refuses_less_than_1200(self):
+        response = self.client.get(reverse('planner'), {'calories': '1150'})
+        self.assertContains(response, 'Калорії на день мають бути від 1200 до 10000.')
+        self.assertContains(self.client.get(reverse('planner')), 'min="1200"')
 
     def test_goal_panel_links_to_calculator(self):
         self.assertContains(self.client.get(reverse('planner')), f'href="{reverse("calorie_norm")}"')

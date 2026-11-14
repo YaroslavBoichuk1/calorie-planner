@@ -531,6 +531,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .norm-macros { margin: 0; color: rgba(255, 255, 255, 0.85); line-height: 1.6; }
 .norm-macros span { white-space: nowrap; }
 .norm-warning { margin: 0; padding: 12px 16px; border-radius: 16px; background: #FFF1EC; color: #9A3412; font-size: 14px; font-weight: 600; line-height: 1.5; }
+.norm-note-light { margin: 0; font-size: 14px; color: rgba(255, 255, 255, 0.75); line-height: 1.5; }
 .norm-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .norm-actions form { display: contents; }
 .norm-saved-note { margin: 0; color: var(--muted-strong); }

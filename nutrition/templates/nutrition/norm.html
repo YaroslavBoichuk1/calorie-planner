@@ -26,6 +26,9 @@
         {% if result.below_safe_minimum %}
         <p class="norm-warning" role="note">Менше ніж {{ result.safe_minimum }} ккал на день без нагляду лікаря зазвичай не радять. Якщо худнеш на такій нормі — краще порадься з лікарем.</p>
         {% endif %}
+        {% if below_planner_minimum %}
+        <p class="norm-note-light">Раціон складаємо щонайменше на {{ min_day_calories }} ккал на день, тож кнопка нижче відкриє його з {{ min_day_calories }} ккал.</p>
+        {% endif %}
         <div class="norm-actions">
             <a class="btn btn-accent" href="{{ planner_url }}">Скласти раціон</a>
             {% if user.is_authenticated %}
