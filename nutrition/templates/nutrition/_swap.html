@@ -4,14 +4,18 @@
     <div class="swap-body">
         {% if m.reset_url %}<a class="swap-reset" href="{{ m.reset_url }}">↺ Повернути страву, яку підібрав застосунок</a>{% endif %}
         <p class="swap-hint">Порція підлаштується під {{ m.calories|floatformat:0 }} ккал. Спочатку страви, ближчі до твоєї цілі БЖВ.</p>
+        {% if m.swap_options %}
+        <input type="search" class="swap-search" placeholder="Знайти страву або продукт" aria-label="Знайти страву або продукт" autocomplete="off" hidden>
+        {% endif %}
         <ul class="swap-list">
             {% for option in m.swap_options %}
-            <li><a class="swap-option" href="{{ option.url }}">
+            <li data-search="{{ option.search }}"><a class="swap-option" href="{{ option.url }}">
                 <span class="swap-name">{{ option.name }}</span>
                 <span class="swap-shares num"><span><span class="dot dot-protein"></span>{{ option.shares.protein }}%</span><span><span class="dot dot-fat"></span>{{ option.shares.fat }}%</span><span><span class="dot dot-carbs"></span>{{ option.shares.carbs }}%</span></span>
             </a></li>
             {% endfor %}
         </ul>
+        <p class="swap-empty" hidden></p>
     </div>
 </details>
 {% endif %}

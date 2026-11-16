@@ -273,8 +273,14 @@ def build_plan_days(choices):
     return days
 
 
+def search_text(recipe):
+    """Рядок, у якому шукає поле «Знайти страву»: назва й продукти зі складу, малими літерами, з одним видом апострофа."""
+    words = [recipe.name, *(ingredient.product.name for ingredient in recipe.ingredients.all())]
+    return ' '.join(words).lower().replace('’', "'").replace('ʼ', "'")
+
+
 def swap_options(recipes, choices, request, day_index, meal_index, meal_name, dishes_today):
-    """Страви, якими можна замінити прийом, із посиланнями → список {name, shares, url}; найближчі до цілі БЖВ спершу.
+    """Страви, якими можна замінити прийом, із посиланнями → список {name, search, shares, url}; найближчі до цілі БЖВ спершу.
     Страв, які вже є в цьому дні, не пропонує, щоб за день нічого не повторювалось."""
     targets = {'protein': choices['protein_pct'] / 100, 'fat': choices['fat_pct'] / 100, 'carbs': choices['carbs_pct'] / 100}
     options = []
@@ -285,6 +291,7 @@ def swap_options(recipes, choices, request, day_index, meal_index, meal_name, di
         swaps = {**choices['swaps'], (day_index, meal_index): recipe.pk}
         options.append({
             'name': recipe.name,
+            'search': search_text(recipe),
             'shares': {key: round(value * 100) for key, value in shares.items()},
             'miss': sum(abs(shares[key] - targets[key]) for key in targets),
             'url': f"?{plan_query(request.GET, swaps=format_swaps(swaps), day=day_index, meal=meal_index)}",

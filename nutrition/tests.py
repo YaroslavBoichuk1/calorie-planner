@@ -4,6 +4,9 @@ import re
 import json
 import subprocess
 import sys
+import tempfile
+import time
+from collections import Counter
 from datetime import datetime, timedelta
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -19,6 +22,8 @@ from django.urls import reverse
 
 from . import checks, energy, login_limits, silpo, views
 from .models import BoughtList, DailyNorm, MealPlan, PlanItem, Product, Profile, Recipe, RecipeIngredient, SilpoClient
+from . import planner
+from .management.commands.load_catalog import CATALOG_PATH, load_catalog
 from .planner import (
     DAY_PERCENTAGE, NO_RECIPES_MESSAGE, build_recipe_period, day_totals, meal_totals, period_totals,
 )
@@ -367,6 +372,21 @@ class SwapTests(RecipeDataMixin, TestCase):
         self.assertTrue(swap_links)
         self.assertFalse(any(f'.{self.recipe("Сніданкова").pk}' in link.split('swaps=')[1].split('&amp;')[0][-6:] for link in swap_links if 'swaps=0.2.' in link))
         self.assertTrue(all('period=week' in link for link in swap_links))
+
+    def test_search_text_has_name_and_products_in_lower_case(self):
+        from nutrition.views import search_text
+        recipe = Recipe.objects.prefetch_related('ingredients__product').get(name='Страва А')
+        self.assertEqual(search_text(recipe), 'страва а білок жир вуглеводи')
+        recipe.name = 'Олів’є'
+        self.assertTrue(search_text(recipe).startswith("олів'є "))
+
+    def test_swap_menu_has_search_field_and_search_text_on_each_dish(self):
+        html = self.page(period='week', meal=2)
+        self.assertIn('class="swap-search"', html)
+        self.assertIn("nutrition/swap.js", html)
+        items = re.findall(r'<li data-search="([^"]+)"><a class="swap-option"', html)
+        self.assertEqual(len(items), len(re.findall(r'class="swap-option"', html)))
+        self.assertTrue(all(item.endswith(' білок жир вуглеводи') for item in items))
 
     def test_swap_shows_on_page_with_reset_link_and_reaches_shopping_and_save(self):
         other = 'Страва А' if self.first_dinner() != 'Страва А' else 'Страва Б'
@@ -2241,3 +2261,172 @@ class CalorieNormPageTests(TestCase):
 
     def test_goal_panel_links_to_calculator(self):
         self.assertContains(self.client.get(reverse('planner')), f'href="{reverse("calorie_norm")}"')
+
+
+def macro_percents(totals):
+    """Частки калорій від білка, жиру й вуглеводів у відсотках (за 4/9/4 ккал на грам)."""
+    calories = totals['protein'] * 4 + totals['fat'] * 9 + totals['carbs'] * 4
+    return [totals[key] * kcal * 100 / calories for key, kcal in (('protein', 4), ('fat', 9), ('carbs', 4))]
+
+
+class CatalogFileTests(SimpleTestCase):
+    """Файл nutrition/data/catalog.json: чи все в ньому зводиться докупи (без бази)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.catalog = json.loads(CATALOG_PATH.read_text(encoding='utf-8'))
+        cls.products = {product['name']: product for product in cls.catalog['products']}
+
+    def test_size(self):
+        self.assertGreaterEqual(len(self.catalog['recipes']), 100)
+        self.assertEqual(len(self.products), len(self.catalog['products']))            # назви продуктів не повторюються
+        self.assertEqual(len({r['name'] for r in self.catalog['recipes']}), len(self.catalog['recipes']))
+
+    def test_every_ingredient_is_a_known_product_with_sane_grams(self):
+        for recipe in self.catalog['recipes']:
+            with self.subTest(recipe=recipe['name']):
+                self.assertTrue(recipe['meals'])
+                self.assertLessEqual(set(recipe['meals']), {'breakfast', 'lunch', 'dinner'})
+                self.assertLessEqual(set(recipe['ingredients']), set(self.products))
+                self.assertTrue(all(0 < grams <= 500 for grams in recipe['ingredients'].values()))
+
+    def test_products_have_source_search_and_color(self):
+        for product in self.catalog['products']:
+            with self.subTest(product=product['name']):
+                self.assertIsInstance(product['fdc_id'], int)
+                self.assertTrue(product['silpo_search'])
+                self.assertRegex(product['color'], r'^#[0-9A-F]{6}$')
+
+    def test_calories_agree_with_macros(self):
+        """Ловить описки в числах: калорії мають приблизно дорівнювати 4×Б + 9×Ж + 4×В."""
+        for product in self.catalog['products']:
+            estimate = product['proteins'] * 4 + product['fats'] * 9 + product['carbs'] * 4
+            with self.subTest(product=product['name']):
+                self.assertLessEqual(abs(estimate - product['calories']), max(20, product['calories'] * 0.2))
+
+    def test_every_product_is_used(self):
+        used = {name for recipe in self.catalog['recipes'] for name in recipe['ingredients']}
+        self.assertEqual(set(self.products) - used, set())
+
+
+class LoadCatalogTests(TestCase):
+    """Команда load_catalog: заносить каталог, повторно — без дублів, ціни й страви з адмінки не чіпає."""
+
+    def test_loads_everything(self):
+        out = io.StringIO()
+        call_command('load_catalog', stdout=out)
+        catalog = json.loads(CATALOG_PATH.read_text(encoding='utf-8'))
+        self.assertEqual(Product.objects.count(), len(catalog['products']))
+        self.assertEqual(Recipe.objects.count(), len(catalog['recipes']))
+        self.assertIn(f"Страви: нових {len(catalog['recipes'])}", out.getvalue())
+        borshch = Recipe.objects.get(name='Борщ із яловичиною')
+        self.assertEqual((borshch.for_breakfast, borshch.for_lunch, borshch.for_dinner), (False, True, True))
+        self.assertEqual(borshch.ingredients.get(product__name='буряк').grams, 100)
+
+    def test_second_run_changes_nothing_and_keeps_prices_and_own_recipes(self):
+        load_catalog()
+        beet = Product.objects.get(name='буряк')
+        beet.price = 23.5
+        beet.save()
+        own = Recipe.objects.create(name='Моя страва з адмінки')
+        borshch = Recipe.objects.get(name='Борщ із яловичиною')
+        borshch.ingredients.filter(product__name='сметана').delete()     # хтось поміняв страву в адмінці
+        counts = (Product.objects.count(), Recipe.objects.count(), RecipeIngredient.objects.count())
+
+        catalog = json.loads(CATALOG_PATH.read_text(encoding='utf-8'))
+        self.assertEqual(load_catalog(), {'products': (0, len(catalog['products'])), 'recipes': (0, len(catalog['recipes']))})
+        self.assertEqual((Product.objects.count(), Recipe.objects.count(), RecipeIngredient.objects.count()),
+                         (counts[0], counts[1], counts[2] + 1))                     # сметана повернулась
+        self.assertEqual(float(Product.objects.get(name='буряк').price), 23.5)
+        self.assertTrue(Recipe.objects.filter(pk=own.pk).exists())
+
+    def test_broken_catalog_changes_nothing(self):
+        broken = {'products': [], 'recipes': [{'name': 'Страва', 'meals': ['lunch'], 'ingredients': {'невідоме': 100}}]}
+        with tempfile.NamedTemporaryFile('w', suffix='.json', encoding='utf-8') as file:
+            json.dump(broken, file)
+            file.flush()
+            with self.assertRaisesMessage(CommandError, 'нема продуктів'):
+                call_command('load_catalog', path=file.name, stdout=io.StringIO())
+        self.assertFalse(Recipe.objects.exists())
+
+
+class CatalogPlanQualityTests(TestCase):
+    """Раціони з повного каталогу: влучають у пропорції, різноманітні й складаються швидко."""
+
+    @classmethod
+    def setUpTestData(cls):
+        load_catalog()
+
+    def build(self, protein, fat, carbs, calories=2000, period='week', days=None, variant=0):
+        choices = views.read_choices({
+            'period': period, 'days': days, 'calories': str(calories),
+            'protein_pct': str(protein), 'fat_pct': str(fat), 'carbs_pct': str(carbs), 'variant': str(variant),
+        })
+        return views.build_plan_days(choices)
+
+    def test_enough_dishes_for_every_meal(self):
+        self.assertGreaterEqual(Recipe.objects.filter(for_breakfast=True).count(), 30)
+        self.assertGreaterEqual(Recipe.objects.filter(for_lunch=True).count(), 60)
+        self.assertGreaterEqual(Recipe.objects.filter(for_dinner=True).count(), 60)
+
+    def test_every_preset_hits_its_proportion(self):
+        """Раніше «Більше білка» давало 32/31/37 замість 40/30/30: бракувало білкових страв без гарніру."""
+        for name, protein, fat, carbs in views.PRESETS:
+            for calories in (1600, 2500):
+                for variant in (0, 1):
+                    with self.subTest(preset=name, calories=calories, variant=variant):
+                        got = macro_percents(period_totals(self.build(protein, fat, carbs, calories, variant=variant)))
+                        for want, actual in zip((protein, fat, carbs), got):
+                            self.assertAlmostEqual(actual, want, delta=1.5)
+
+    def test_week_is_varied(self):
+        for name, protein, fat, carbs in views.PRESETS:
+            with self.subTest(preset=name):
+                uses = Counter(meal['recipe_name'] for day in self.build(protein, fat, carbs) for meal in day['day'])
+                self.assertGreaterEqual(len(uses), 13)                   # з 21 прийому за тиждень
+                self.assertLessEqual(max(uses.values()), 4)
+
+    def test_month_builds_fast(self):
+        """Перебір усіх поєднань (34×77×75 на день) складав місяць 45 с; короткі списки — менш ніж за секунду."""
+        start = time.perf_counter()
+        self.build(40, 30, 30, period='custom', days='31')
+        self.assertLess(time.perf_counter() - start, 5)
+
+
+class EngineShortlistTests(RecipeDataMixin, TestCase):
+    """Короткі списки страв і штраф за надто важку порцію."""
+
+    def setUp(self):
+        self.make_recipes()
+        self.water = Product.objects.create(name='вода', calories=0, proteins=0, fats=0, carbs=0)
+
+    def test_heavy_portion_penalty(self):
+        self.assertEqual(planner.heaviness_penalty(400, 300, 800), 0)            # 600 г — нормально
+        self.assertAlmostEqual(planner.heaviness_penalty(400, 500, 800), planner.HEAVY_PENALTY * 2)   # 1000 г: 200 г зайвих
+
+    def test_same_dish_but_lighter_portion_wins(self):
+        """Чотири страви точно в ціль 30/30/40, одна розбавлена водою (на прийом вийшло б понад 2 кг).
+
+        За алфавітом розбавлена перша, тож без штрафу вона потрапила б у меню; зі штрафом беремо три компактні.
+        """
+        Recipe.objects.all().delete()
+        for name in ('Третя', 'Четверта', 'Щільна'):
+            self.make_recipe(name, 30, 40 / 3, 40)
+        watery = self.make_recipe('Водяниста', 30, 40 / 3, 40)
+        RecipeIngredient.objects.create(recipe=watery, product=self.water, grams=1000)
+        days = build_recipe_period(Recipe.objects.prefetch_related('ingredients__product'), 1, 2000, 0.3, 0.3, 0.4)
+        self.assertEqual(sorted(menu(days[0])), ['Третя', 'Четверта', 'Щільна'])
+
+    def test_shortlist_keeps_the_richest_dishes(self):
+        """Страва, далека від цілі, але найбагатша на білок, лишається в короткому списку: нею можна врівноважити день."""
+        for index in range(planner.SHORTLIST + 5):
+            self.make_recipe(f'Середня {index}', 30, 13, 40)
+        protein_bomb = self.make_recipe('Самий білок', 100, 1, 1)
+        recipes = list(Recipe.objects.prefetch_related('ingredients__product'))
+        shares = {recipe: planner.recipe_shares(recipe) for recipe in recipes}
+        targets = {'protein': 0.3, 'fat': 0.3, 'carbs': 0.4}
+        options = [(recipe, sum(abs(shares[recipe][m] - t) for m, t in targets.items())) for recipe in recipes]
+        short = planner.shortlist(options, shares, {}, {})
+        self.assertEqual(len(short), planner.SHORTLIST)
+        self.assertIn(protein_bomb, short)
