@@ -14,7 +14,7 @@ from . import silpo
 from .models import MAX_LIST_KEY, BoughtList, MealPlan, Profile, Recipe
 from .plans import load_plan_days, save_plan
 from .planner import (
-    MIN_DAY_CALORIES, MAX_DAY_CALORIES, WEEK_DAYS,
+    MEAL_SCHEDULES, MIN_DAY_CALORIES, MAX_DAY_CALORIES, SNACKS, WEEK_DAYS,
     build_recipe_period, day_totals, meal_totals, period_totals, recipe_shares, recipe_totals,
     shopping_list, swap_meal,
 )
@@ -178,6 +178,7 @@ def plan_view(plan_days, targets, day_index, meal_index, link):
             'index': index,
             'items': composition_of(meal_info['meal']),
             'name': meal_info['name'],
+            'snack': meal_info['name'] in SNACKS,
             'calories': meal_info['calories'],
             'dish': dish_name(meal_info),
             'totals': meal_totals(meal_info['meal']),
@@ -411,6 +412,8 @@ def planner_view(request):
             rest = {key: value for key, value in choices['swaps'].items() if key != slot}
             meal['reset_url'] = f"?{plan_query(request.GET, swaps=format_swaps(rest), day=slot[0], meal=slot[1])}"
     context['view'] = view
+    if any(meal['name'] in SNACKS for meal in view['meals']):
+        context['snack_from'] = MEAL_SCHEDULES[1][0]     # з яких калорій з'являються перекуси — для примітки
     return render(request, 'nutrition/planner.html', context)
 
 

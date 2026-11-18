@@ -10,16 +10,36 @@ NO_RECIPES_MESSAGE = "Бракує страв для раціону. Додай 
 VARIANT_JITTER = 0.04      # «Скласти заново»: найбільший випадковий зсув оцінки страви (4 в. п. промаху БЖВ)
 VARIETY_PENALTY = 0.025    # скільки промаху БЖВ «коштує» кожне вживання страви за період: більше — різноманітніше, менше — точніше
 MAX_MEAL_GRAMS = 800       # г на прийом: важча порція виглядає нереально (2 кг рагу), тож такі страви штрафуємо
-HEAVY_PENALTY = 0.005      # скільки промаху БЖВ «коштують» кожні 100 г понад MAX_MEAL_GRAMS (легкий: сильніший ламає БЖВ)
+MAX_SNACK_GRAMS = 400      # г на перекус: перекус має бути невеликим
+HARD_MEAL_GRAMS = 1000     # г: страву, якої на прийом вийшло б більше, на цей прийом не пропонуємо взагалі
+HARD_SNACK_GRAMS = 500     # те саме для перекусу
+MIN_CHOICE = 6             # якщо легших страв на прийом менше, беремо стільки найлегших
+HEAVY_PENALTY = 0.01       # скільки промаху БЖВ «коштують» кожні 100 г понад MAX_MEAL_GRAMS (сильніший ламає БЖВ)
 SHORTLIST = 15             # скільки страв на прийом перебирати всіма поєднаннями (усі — надто повільно: 34×77×75)
 RICHEST = 3                # з них по стільки найбагатших на білок, жир і вуглеводи — щоб було чим урівноважити день
+SNACK_SHORTLIST = 24       # перекусів небагато, тож на перекус перебираємо майже всі
 DAY_PERCENTAGE = {'Сніданок': 0.25, 'Обід': 0.40, 'Вечеря': 0.35}
+# Скільки прийомів і як ділити калорії: (від скількох ккал на день, {прийом: частка калорій}).
+# На великі калорії трьох прийомів замало: обід на 1200 ккал важив би понад кілограм.
+# Тому додаємо перекуси — ситні й невеликі (горіхи, сир, хлібці): 400 ккал займають 100–200 г.
+MEAL_SCHEDULES = [
+    (0, DAY_PERCENTAGE),
+    (2200, {'Сніданок': 0.25, 'Обід': 0.35, 'Перекус': 0.15, 'Вечеря': 0.25}),
+    (2800, {'Сніданок': 0.20, 'Ранковий перекус': 0.15, 'Обід': 0.25, 'Денний перекус': 0.15, 'Вечеря': 0.25}),
+]
+SNACKS = {'Перекус', 'Ранковий перекус', 'Денний перекус'}
 WEEK_DAYS = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота', 'Неділя']
 
-def split_calories(calories):
-    """Ділить денну норму калорій між прийомами за частками DAY_PERCENTAGE → {назва: ккал}."""
+
+def day_schedule(calories):
+    """Прийоми дня під цю норму калорій → {назва прийому: частка калорій}."""
+    return next(schedule for start, schedule in reversed(MEAL_SCHEDULES) if calories >= start)
+
+
+def split_calories(calories, schedule=DAY_PERCENTAGE):
+    """Ділить денну норму калорій між прийомами за частками schedule → {назва: ккал}."""
     day_calories = {}
-    for name, share in DAY_PERCENTAGE.items():
+    for name, share in schedule.items():
         day_calories[name] = (calories * share)
     return day_calories
 
@@ -241,14 +261,14 @@ def recipe_grams(recipe):
     return sum(ingredient.grams for ingredient in recipe.ingredients.all())
 
 
-def heaviness_penalty(recipe_calories, grams, meal_calories):
-    """Штраф для страви, якої на калорії прийому вийшло б понад MAX_MEAL_GRAMS: 0, якщо порція нормальна."""
+def heaviness_penalty(recipe_calories, grams, meal_calories, limit=MAX_MEAL_GRAMS):
+    """Штраф для страви, якої на калорії прийому вийшло б понад limit грамів: 0, якщо порція нормальна."""
     portion_grams = grams * meal_calories / recipe_calories
-    return HEAVY_PENALTY * max(0.0, portion_grams - MAX_MEAL_GRAMS) / 100
+    return HEAVY_PENALTY * max(0.0, portion_grams - limit) / 100
 
 
-def shortlist(options, shares, dish_uses, jitter):
-    """Страви прийому, серед яких перебираємо всі поєднання дня (SHORTLIST штук).
+def shortlist(options, shares, dish_uses, jitter, size=SHORTLIST):
+    """Страви прийому, серед яких перебираємо всі поєднання дня (size штук).
 
     Більшість — найперспективніші: самі по собі близькі до цілі, не надто важкі й не заїжджені.
     Решта — по RICHEST найбагатших на білок, на жир і на вуглеводи: страва, далека від цілі, буває якраз тим,
@@ -259,48 +279,66 @@ def shortlist(options, shares, dish_uses, jitter):
         return static_cost + VARIETY_PENALTY * dish_uses.get(recipe, 0) + jitter.get(recipe, 0)
 
     ranked = [recipe for recipe, _ in sorted(options, key=promise)]
-    chosen = ranked[:SHORTLIST - 3 * RICHEST]
+    chosen = ranked[:size - 3 * RICHEST]
     for macro in ('protein', 'fat', 'carbs'):
         richest = [recipe for recipe in sorted(ranked, key=lambda recipe: -shares[recipe][macro]) if recipe not in chosen]
         chosen.extend(richest[:RICHEST])
     return chosen
 
 
-def choose_day_recipes(shortlists, weighted, heavy, targets, previous_day, times_used, dish_uses, jitter):
-    """Вибирає по страві на кожен прийом дня: перебирає всі поєднання з коротких списків і бере найкраще за rank.
+def choose_day_recipes(shortlists, snack_slots, meal_shares, weighted, heavy, targets, previous_day, times_used, cost):
+    """Вибирає по страві на кожен прийом дня → кортеж страв у порядку прийомів.
 
+    Без перекусів перебирає всі поєднання коротких списків і бере найкраще за rank.
+    З перекусами всіх поєднань забагато (15⁵ = 760 тис. на день), тож у три кроки:
+    1) основні прийоми, ніби перекуси дадуть рівно ціль на свою частку калорій;
+    2) перекуси — під те, чого основним бракує;
+    3) ще раз основні — під уже вибрані перекуси.
+
+    snack_slots — номери прийомів-перекусів; meal_shares[i] — частка калорій прийому i;
     weighted[i][страва] — частки БЖВ страви, помножені на частку калорій прийому i (щоб день просто складати);
-    heavy[i][страва] — штраф за надто важку порцію на прийомі i.
+    heavy[i][страва] — штраф за надто важку порцію на прийомі i; cost[страва] — штраф за різноманітність.
     """
-    target_protein, target_fat, target_carbs = targets['protein'], targets['fat'], targets['carbs']
     yesterday = set(previous_day)
-    cost = {recipe: VARIETY_PENALTY * dish_uses.get(recipe, 0) + jitter.get(recipe, 0)
-            for recipes in shortlists for recipe in recipes}
+    main_slots = [slot for slot in range(len(shortlists)) if slot not in snack_slots]
 
-    def rank(day_recipes):
-        """Оцінка поєднання: кортежі порівнюються зліва направо, тож перші правила важливіші, а менше — краще."""
-        protein = fat = carbs = extra = 0.0
-        for meal_index, recipe in enumerate(day_recipes):
-            meal_protein, meal_fat, meal_carbs = weighted[meal_index][recipe]
+    def rank(day):
+        """Оцінка дня {прийом: страва}: кортежі порівнюються зліва направо, тож перші правила важливіші, а менше — краще.
+        Прийоми без страви ще не вибрані: ціль для решти береться пропорційно їхній частці калорій."""
+        protein = fat = carbs = extra = share = 0.0
+        for slot, recipe in day.items():
+            meal_protein, meal_fat, meal_carbs = weighted[slot][recipe]
             protein += meal_protein
             fat += meal_fat
             carbs += meal_carbs
-            extra += cost[recipe] + heavy[meal_index][recipe]
-        miss = abs(protein - target_protein) + abs(fat - target_fat) + abs(carbs - target_carbs)
+            extra += cost[recipe] + heavy[slot][recipe]
+            share += meal_shares[slot]
+        miss = (abs(protein - targets['protein'] * share) + abs(fat - targets['fat'] * share)
+                + abs(carbs - targets['carbs'] * share))
+        recipes = list(day.values())
         return (
-            len(day_recipes) - len(set(day_recipes)),          # одна страва двічі за день
-            len(yesterday.intersection(day_recipes)),          # страви, які були вчора
-            times_used.get(day_recipes, 0),                    # таке саме меню дня вже було
-            miss + extra,                                      # промах БЖВ + різноманітність + вага порцій
+            len(recipes) - len(set(recipes)),                                 # одна страва двічі за день
+            len(yesterday.intersection(recipes)),                             # страви, які були вчора
+            times_used.get(tuple(day[slot] for slot in main_slots), 0),       # такі самі основні страви вже були
+            miss + extra,                                                     # промах БЖВ + різноманітність + вага порцій
         )
 
-    return min(itertools.product(*shortlists), key=rank)
+    def best(slots, fixed):
+        """Найкращі страви на прийоми slots, коли на решту вже вибрано fixed {прийом: страва}."""
+        combos = itertools.product(*(shortlists[slot] for slot in slots))
+        return min(({**fixed, **dict(zip(slots, combo))} for combo in combos), key=rank)
+
+    day = best(main_slots, {})
+    if snack_slots:
+        day = best(snack_slots, day)
+        day = best(main_slots, {slot: day[slot] for slot in snack_slots})
+    return tuple(day[slot] for slot in range(len(shortlists)))
 
 
-def build_recipe_day(day_recipes, day_calories):
+def build_recipe_day(day_recipes, day_calories, schedule=DAY_PERCENTAGE):
     """Будує день зі страв: порцію кожної страви підганяє під калорії її прийому → список прийомів."""
     meals = []
-    for (name, meal_calories), recipe in zip(split_calories(day_calories).items(), day_recipes):
+    for (name, meal_calories), recipe in zip(split_calories(day_calories, schedule).items(), day_recipes):
         portion = meal_calories / recipe_totals(recipe)['calories']
         meals.append({
             'name': name,
@@ -343,24 +381,36 @@ def build_recipe_period(recipes, days_count, day_calories, protein_pct, fat_pct,
     if not shares:
         raise ValueError(NO_RECIPES_MESSAGE)
 
-    # candidates: для кожного прийому — страви, які на нього годяться
+    schedule = day_schedule(day_calories)
+    if not any(recipe.fits_meal('Перекус') for recipe in shares):
+        schedule = DAY_PERCENTAGE     # перекусів у базі ще нема (скажімо, каталог не завантажили) — лишаємо три прийоми
+    snack_slots = {slot for slot, name in enumerate(schedule) if name in SNACKS}
+
+    # candidates: для кожного прийому — страви, які на нього годяться і порція яких не вийде завеликою
     candidates = []
-    for meal_name in DAY_PERCENTAGE:
+    for meal_name, meal_share in schedule.items():
         fitting = [recipe for recipe in shares if recipe.fits_meal(meal_name)]
         if not fitting:
             raise ValueError(f"Немає страви на прийом «{meal_name}». Додай її в адмінці.")
-        candidates.append(fitting)
+        limit = HARD_SNACK_GRAMS if meal_name in SNACKS else HARD_MEAL_GRAMS
+        def portion(recipe):
+            return recipe_grams(recipe) * day_calories * meal_share / recipe_calories[recipe]
+        light = [recipe for recipe in fitting if portion(recipe) <= limit]
+        # якщо легких страв замало, беремо найлегші: краще важка порція, ніж раціон без вибору
+        candidates.append(light if len(light) >= MIN_CHOICE else sorted(fitting, key=portion)[:MIN_CHOICE])
 
     targets = {'protein': protein_pct, 'fat': fat_pct, 'carbs': carbs_pct}
     # Усе, що не міняється від дня до дня, рахуємо один раз: частки БЖВ на прийом, штраф за вагу, близькість до цілі
-    meal_calories = list(split_calories(day_calories).values())
+    meal_shares = list(schedule.values())
+    meal_calories = list(split_calories(day_calories, schedule).values())
     weighted, heavy, options = [], [], []
-    for meal_share, calories, fitting in zip(DAY_PERCENTAGE.values(), meal_calories, candidates):
+    for slot, (meal_share, calories, fitting) in enumerate(zip(meal_shares, meal_calories, candidates)):
+        limit = MAX_SNACK_GRAMS if slot in snack_slots else MAX_MEAL_GRAMS
         weighted.append({
             recipe: tuple(meal_share * shares[recipe][macro] for macro in ('protein', 'fat', 'carbs')) for recipe in fitting
         })
         heavy.append({
-            recipe: heaviness_penalty(recipe_calories[recipe], recipe_grams(recipe), calories) for recipe in fitting
+            recipe: heaviness_penalty(recipe_calories[recipe], recipe_grams(recipe), calories, limit) for recipe in fitting
         })
         options.append([
             (recipe, sum(abs(shares[recipe][macro] - target) for macro, target in targets.items()) + heavy[-1][recipe])
@@ -375,14 +425,22 @@ def build_recipe_period(recipes, days_count, day_calories, protein_pct, fat_pct,
         jitter = {recipe: generator.uniform(0, VARIANT_JITTER) for recipe in sorted(shares, key=lambda recipe: recipe.pk)}
 
     previous_day = ()
-    times_used = {}    # скільки разів було кожне поєднання страв
+    times_used = {}    # скільки разів було кожне поєднання основних страв (без перекусів)
     dish_uses = {}     # скільки разів була кожна страва
     for i in range(days_count):
-        shortlists = [shortlist(meal_options, shares, dish_uses, jitter) for meal_options in options]
-        day_recipes = choose_day_recipes(shortlists, weighted, heavy, targets, previous_day, times_used, dish_uses, jitter)
-        times_used[day_recipes] = times_used.get(day_recipes, 0) + 1
+        shortlists = [
+            shortlist(meal_options, shares, dish_uses, jitter, SNACK_SHORTLIST if slot in snack_slots else SHORTLIST)
+            for slot, meal_options in enumerate(options)
+        ]
+        cost = {recipe: VARIETY_PENALTY * dish_uses.get(recipe, 0) + jitter.get(recipe, 0)
+                for recipes in shortlists for recipe in recipes}
+        day_recipes = choose_day_recipes(
+            shortlists, snack_slots, meal_shares, weighted, heavy, targets, previous_day, times_used, cost,
+        )
+        main = tuple(recipe for slot, recipe in enumerate(day_recipes) if slot not in snack_slots)
+        times_used[main] = times_used.get(main, 0) + 1
         for recipe in day_recipes:
             dish_uses[recipe] = dish_uses.get(recipe, 0) + 1
         previous_day = day_recipes
-        days.append({'name': day_name(i, days_count), 'day': build_recipe_day(day_recipes, day_calories)})
+        days.append({'name': day_name(i, days_count), 'day': build_recipe_day(day_recipes, day_calories, schedule)})
     return days

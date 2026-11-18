@@ -139,12 +139,26 @@ class SilpoClient(models.Model):
         return self.redirect_uri
 
 
+# Назва прийому → позначка страви, яка каже, чи годиться страва на цей прийом.
+# Перекусів у дні буває до двох, і на обидва годяться ті самі страви.
+MEAL_FLAGS = {
+    'Сніданок': 'for_breakfast',
+    'Обід': 'for_lunch',
+    'Вечеря': 'for_dinner',
+    'Перекус': 'for_snack',
+    'Ранковий перекус': 'for_snack',
+    'Денний перекус': 'for_snack',
+}
+
+
 class Recipe(models.Model):
     """Страва: назва й прийоми, на які вона годиться; продукти з грамами лежать у RecipeIngredient."""
     name = models.CharField(max_length=200)
     for_breakfast = models.BooleanField('Сніданок', default=True)
     for_lunch = models.BooleanField('Обід', default=True)
     for_dinner = models.BooleanField('Вечеря', default=True)
+    # Перекус — невелика ситна страва між основними прийомами; з'являється в раціонах від 2200 ккал
+    for_snack = models.BooleanField('Перекус', default=False)
 
     class Meta:
         ordering = ['name']
@@ -155,11 +169,7 @@ class Recipe(models.Model):
 
     def fits_meal(self, meal_name):
         """Чи годиться страва на прийом із такою назвою."""
-        return {
-            'Сніданок': self.for_breakfast,
-            'Обід': self.for_lunch,
-            'Вечеря': self.for_dinner,
-        }[meal_name]
+        return getattr(self, MEAL_FLAGS[meal_name])
 
 
 class RecipeIngredient(models.Model):

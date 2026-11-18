@@ -32,6 +32,7 @@
 </div>
 {% else %}
 {% if variant %}<p class="variant-note num">Варіант меню № {{ variant|add:1 }} · <a href="{{ first_variant_url }}">повернути перший</a></p>{% endif %}
+{% if snack_from %}<p class="variant-note num">Від {{ snack_from }} ккал додаємо перекуси: на три прийоми порції вийшли б завеликі.</p>{% endif %}
 {% include 'nutrition/_plan_view.html' %}
 {% endif %}
 {% endblock %}

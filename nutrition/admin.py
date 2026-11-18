@@ -23,7 +23,8 @@ class RecipeIngredientInline(admin.TabularInline):
 
 
 class RecipeAdmin(admin.ModelAdmin):
-    list_display = ['name', 'for_breakfast', 'for_lunch', 'for_dinner', 'portion_summary']
+    list_display = ['name', 'for_breakfast', 'for_lunch', 'for_dinner', 'for_snack', 'portion_summary']
+    list_filter = ['for_breakfast', 'for_lunch', 'for_dinner', 'for_snack']
     search_fields = ['name']
     inlines = [RecipeIngredientInline]   # продукти редагуємо прямо на сторінці страви
 

@@ -14,7 +14,7 @@ from nutrition.models import Product, Recipe, RecipeIngredient
 
 CATALOG_PATH = Path(__file__).resolve().parents[2] / 'data' / 'catalog.json'
 PRODUCT_FIELDS = ('fdc_id', 'calories', 'proteins', 'fats', 'carbs', 'silpo_search', 'color')
-MEAL_FLAGS = {'breakfast': 'for_breakfast', 'lunch': 'for_lunch', 'dinner': 'for_dinner'}
+MEAL_FLAGS = {'breakfast': 'for_breakfast', 'lunch': 'for_lunch', 'dinner': 'for_dinner', 'snack': 'for_snack'}
 
 
 def load_catalog(path=CATALOG_PATH):

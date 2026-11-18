@@ -21,7 +21,7 @@ from django.test import Client, RequestFactory, SimpleTestCase, TestCase
 from django.urls import reverse
 
 from . import checks, energy, login_limits, silpo, views
-from .models import BoughtList, DailyNorm, MealPlan, PlanItem, Product, Profile, Recipe, RecipeIngredient, SilpoClient
+from .models import MEAL_FLAGS, BoughtList, DailyNorm, MealPlan, PlanItem, Product, Profile, Recipe, RecipeIngredient, SilpoClient
 from . import planner
 from .management.commands.load_catalog import CATALOG_PATH, load_catalog
 from .planner import (
@@ -2287,7 +2287,7 @@ class CatalogFileTests(SimpleTestCase):
         for recipe in self.catalog['recipes']:
             with self.subTest(recipe=recipe['name']):
                 self.assertTrue(recipe['meals'])
-                self.assertLessEqual(set(recipe['meals']), {'breakfast', 'lunch', 'dinner'})
+                self.assertLessEqual(set(recipe['meals']), {'breakfast', 'lunch', 'dinner', 'snack'})
                 self.assertLessEqual(set(recipe['ingredients']), set(self.products))
                 self.assertTrue(all(0 < grams <= 500 for grams in recipe['ingredients'].values()))
 
@@ -2369,16 +2369,30 @@ class CatalogPlanQualityTests(TestCase):
         self.assertGreaterEqual(Recipe.objects.filter(for_breakfast=True).count(), 30)
         self.assertGreaterEqual(Recipe.objects.filter(for_lunch=True).count(), 60)
         self.assertGreaterEqual(Recipe.objects.filter(for_dinner=True).count(), 60)
+        self.assertGreaterEqual(Recipe.objects.filter(for_snack=True).count(), 20)
 
     def test_every_preset_hits_its_proportion(self):
-        """Раніше «Більше білка» давало 32/31/37 замість 40/30/30: бракувало білкових страв без гарніру."""
+        """Раніше «Більше білка» давало 32/31/37 замість 40/30/30: бракувало білкових страв без гарніру.
+
+        З перекусами допуск ширший: страв, порція яких вийшла б понад 1 кг, не беремо, а це трохи коштує точності.
+        """
         for name, protein, fat, carbs in views.PRESETS:
-            for calories in (1600, 2500):
+            for calories, delta in ((1600, 1.5), (2500, 2.5)):
                 for variant in (0, 1):
                     with self.subTest(preset=name, calories=calories, variant=variant):
                         got = macro_percents(period_totals(self.build(protein, fat, carbs, calories, variant=variant)))
                         for want, actual in zip((protein, fat, carbs), got):
-                            self.assertAlmostEqual(actual, want, delta=1.5)
+                            self.assertAlmostEqual(actual, want, delta=delta)
+
+    def test_big_calories_get_snacks_and_no_huge_portions(self):
+        """На 3000 ккал три прийоми важили б до 1,7 кг; з перекусами й межею — основний прийом до 1 кг, перекус до 500 г."""
+        for name, protein, fat, carbs in views.PRESETS:
+            with self.subTest(preset=name):
+                for day in self.build(protein, fat, carbs, 3000):
+                    self.assertEqual(len(day['day']), 5)
+                    for meal in day['day']:
+                        limit = planner.HARD_SNACK_GRAMS if meal['name'] in planner.SNACKS else planner.HARD_MEAL_GRAMS
+                        self.assertLessEqual(sum(item['grams'] for item in meal['meal']), limit, meal['recipe_name'])
 
     def test_week_is_varied(self):
         for name, protein, fat, carbs in views.PRESETS:
@@ -2389,9 +2403,11 @@ class CatalogPlanQualityTests(TestCase):
 
     def test_month_builds_fast(self):
         """Перебір усіх поєднань (34×77×75 на день) складав місяць 45 с; короткі списки — менш ніж за секунду."""
-        start = time.perf_counter()
-        self.build(40, 30, 30, period='custom', days='31')
-        self.assertLess(time.perf_counter() - start, 5)
+        for calories in (2000, 3000):      # 3000 — з двома перекусами
+            with self.subTest(calories=calories):
+                start = time.perf_counter()
+                self.build(40, 30, 30, calories, period='custom', days='31')
+                self.assertLess(time.perf_counter() - start, 5)
 
 
 class EngineShortlistTests(RecipeDataMixin, TestCase):
@@ -2418,6 +2434,18 @@ class EngineShortlistTests(RecipeDataMixin, TestCase):
         days = build_recipe_period(Recipe.objects.prefetch_related('ingredients__product'), 1, 2000, 0.3, 0.3, 0.4)
         self.assertEqual(sorted(menu(days[0])), ['Третя', 'Четверта', 'Щільна'])
 
+    def test_dish_with_too_heavy_portion_is_not_offered_at_all(self):
+        """Навіть без штрафу за вагу страву, якої на прийом вийшло б понад 1 кг, не беремо, якщо є з чого вибрати."""
+        Recipe.objects.all().delete()
+        for index in range(planner.MIN_CHOICE):
+            self.make_recipe(f'Щільна {index}', 30, 40 / 3, 40)
+        watery = self.make_recipe('Водяниста', 30, 40 / 3, 40)       # за алфавітом перша
+        RecipeIngredient.objects.create(recipe=watery, product=self.water, grams=1000)
+        recipes = Recipe.objects.prefetch_related('ingredients__product')
+        with patch.object(planner, 'HEAVY_PENALTY', 0):
+            days = build_recipe_period(recipes, 3, 2000, 0.3, 0.3, 0.4)
+        self.assertNotIn('Водяниста', [name for day in days for name in menu(day)])
+
     def test_shortlist_keeps_the_richest_dishes(self):
         """Страва, далека від цілі, але найбагатша на білок, лишається в короткому списку: нею можна врівноважити день."""
         for index in range(planner.SHORTLIST + 5):
@@ -2430,3 +2458,85 @@ class EngineShortlistTests(RecipeDataMixin, TestCase):
         short = planner.shortlist(options, shares, {}, {})
         self.assertEqual(len(short), planner.SHORTLIST)
         self.assertIn(protein_bomb, short)
+
+
+class SnackTests(RecipeDataMixin, TestCase):
+    """Перекуси: від 2200 ккал з'являються в дні, і на них стають лише страви для перекусу."""
+
+    def setUp(self):
+        """Шість звичайних страв і чотири перекуси."""
+        self.make_recipes()
+        for index, grams in enumerate([(30, 15, 40), (20, 20, 30), (40, 10, 30), (25, 25, 35)]):
+            self.make_recipe(f'Горішки {index}', *grams, for_breakfast=False, for_lunch=False, for_dinner=False, for_snack=True)
+
+    def build(self, calories, days_count=7):
+        """Раціон на days_count днів із ціллю 30/30/40."""
+        return build_recipe_period(Recipe.objects.prefetch_related('ingredients__product'), days_count, calories, 0.3, 0.3, 0.4)
+
+    def test_schedule_depends_on_calories(self):
+        names = {calories: list(planner.day_schedule(calories)) for calories in (1200, 2199, 2200, 2799, 2800, 10000)}
+        three, four = ['Сніданок', 'Обід', 'Вечеря'], ['Сніданок', 'Обід', 'Перекус', 'Вечеря']
+        five = ['Сніданок', 'Ранковий перекус', 'Обід', 'Денний перекус', 'Вечеря']
+        self.assertEqual(names, {1200: three, 2199: three, 2200: four, 2799: four, 2800: five, 10000: five})
+        for _, schedule in planner.MEAL_SCHEDULES:
+            self.assertAlmostEqual(sum(schedule.values()), 1)
+            self.assertLessEqual(set(schedule), set(MEAL_FLAGS))       # кожен прийом знає, які страви на нього годяться
+
+    def test_snack_slots_get_only_snacks_and_every_meal_keeps_its_calories(self):
+        for calories, meals_count in ((2000, 3), (2500, 4), (3000, 5)):
+            with self.subTest(calories=calories):
+                for day in self.build(calories):
+                    self.assertEqual(len(day['day']), meals_count)
+                    self.assertEqual(len(set(menu(day))), meals_count)            # за день нічого не повторюється
+                    for meal in day['day']:
+                        recipe = Recipe.objects.get(name=meal['recipe_name'])
+                        self.assertTrue(recipe.fits_meal(meal['name']), (meal['name'], recipe.name))
+                        self.assertAlmostEqual(meal_totals(meal['meal'])['calories'], meal['calories'])
+                    self.assertAlmostEqual(day_totals(day['day'])['calories'], calories)
+
+    def test_without_snack_dishes_day_keeps_three_meals(self):
+        Recipe.objects.filter(for_snack=True).delete()
+        for day in self.build(3000, days_count=2):
+            self.assertEqual([meal['name'] for meal in day['day']], ['Сніданок', 'Обід', 'Вечеря'])
+
+    def test_swap_on_snack_takes_only_snacks(self):
+        from nutrition.views import build_plan_days, read_choices
+        days = build_plan_days(read_choices({'period': 'day', 'calories': '2500'}))
+        self.assertEqual(days[0]['day'][2]['name'], 'Перекус')
+        self.assertFalse(planner.swap_meal(days, 0, 2, Recipe.objects.get(name='Страва А')))
+        snack = next(name for name in ('Горішки 0', 'Горішки 1') if name != days[0]['day'][2]['recipe_name'])
+        self.assertTrue(planner.swap_meal(days, 0, 2, Recipe.objects.get(name=snack)))
+        self.assertEqual(days[0]['day'][2]['recipe_name'], snack)
+
+    def test_page_explains_snacks_only_when_they_are_there(self):
+        note = 'додаємо перекуси'
+        self.assertNotIn(note, self.client.get('/', {'period': 'day', 'calories': '2000'}).content.decode())
+        html = self.client.get('/', {'period': 'day', 'calories': '2500', 'meal': '2'}).content.decode()
+        self.assertIn(note, html)
+        self.assertIn('Перекус · 375 ккал', html)
+
+    def test_snack_card_has_its_own_smaller_style(self):
+        # 2500 ккал: один перекус — його картка позначена і на комп'ютері, і на телефоні
+        html = self.client.get('/', {'period': 'day', 'calories': '2500'}).content.decode()
+        self.assertEqual(html.count('meal-card meal-snack'), 1)
+        self.assertEqual(html.count('meal-fold meal-snack'), 1)
+        html = self.client.get('/', {'period': 'day', 'calories': '2000'}).content.decode()
+        self.assertNotIn('meal-snack', html)
+
+    def test_swap_menu_on_snack_lists_only_snacks(self):
+        from nutrition.views import read_choices, swap_options
+        choices = read_choices({'period': 'day', 'calories': '2500'})
+        request = RequestFactory().get('/', {'period': 'day', 'calories': '2500'})
+        recipes = list(Recipe.objects.prefetch_related('ingredients__product'))
+        offered = [option['name'] for option in swap_options(recipes, choices, request, 0, 2, 'Перекус', set())]
+        self.assertEqual(sorted(offered), [f'Горішки {index}' for index in range(4)])
+
+    def test_saved_plan_keeps_snacks(self):
+        from nutrition.plans import load_plan_days, save_plan
+        from nutrition.views import read_choices
+        choices = read_choices({'period': 'day', 'calories': '3000'})
+        days = self.build(3000, days_count=1)
+        plan = save_plan('З перекусами', choices, days)
+        loaded = load_plan_days(plan)
+        self.assertEqual([meal['name'] for meal in loaded[0]['day']], list(planner.day_schedule(3000)))
+        self.assertEqual(menu(loaded[0]), menu(days[0]))

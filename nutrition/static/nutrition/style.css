@@ -184,6 +184,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .meal-macros { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 12px; font-size: 13px; font-weight: 600; color: var(--muted-strong); }
 .meal-macros > span { display: inline-flex; align-items: center; gap: 5px; }
 .price-pill { padding: 4px 10px; border-radius: 999px; background: var(--ink); color: #FFFFFF; font-weight: 700; }
+/* 4–5 прийомів (з перекусами): усі в один ряд, перекус — вужча й нижча картка з меншою тарілкою */
+.meals-many { display: flex; gap: 8px; }
+.meals-many .meal-card { flex: 3 1 0; min-width: 0; padding: 16px 10px 18px; border-radius: 24px; gap: 10px; }
+.meals-many .meal-label { font-size: 12px; }
+.meals-many .meal-dish { font-size: 15px; }
+.meals-many .meal-macros { gap: 4px 8px; font-size: 12px; }
+.meals-many .meal-snack { flex-grow: 2; align-self: center; padding: 12px 8px 14px; gap: 8px; }
+.meals-many .meal-snack .plate { max-width: 84px; }
+.meals-many .meal-snack .meal-label { font-size: 11px; }
+.meals-many .meal-snack .meal-dish { font-size: 13px; }
+.meals-many .meal-snack .meal-macros { flex-direction: column; gap: 2px; font-size: 11px; }
 
 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
 .dot-protein { background: var(--protein); }
@@ -494,6 +505,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     .meal-label { grid-area: label; }
     .meal-dish { grid-area: dish; font-size: 17px; }
     .meal-macros { grid-area: macros; justify-content: flex-start; }
+    /* перекус: нижча картка з меншою тарілкою й відступом, щоб відрізнявся від основних прийомів */
+    .meal-snack { margin-left: 24px; }
+    .meal-snack .meal-card { grid-template-columns: 64px 1fr; padding: 10px 40px 10px 14px; gap: 2px 14px; }
+    .meal-snack .meal-card .plate { width: 64px; }
+    .meal-snack .meal-label { font-size: 12px; }
+    .meal-snack .meal-dish { font-size: 15px; }
+    .meal-snack .meal-macros { font-size: 12px; }
     .silpo-need { flex-basis: 100%; }
 }
 

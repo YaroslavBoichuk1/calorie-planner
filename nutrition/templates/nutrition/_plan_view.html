@@ -11,9 +11,9 @@
 <div class="plan-grid">
     <div class="plan-main">
         <!-- Комп'ютер: тарілки прийомів, склад вибраної страви окремою панеллю -->
-        <div class="meals meals-desktop">
+        <div class="meals meals-desktop{% if view.meals|length > 3 %} meals-many{% endif %}">
             {% for m in view.meals %}
-            <a class="meal-card{% if m.selected %} is-active{% endif %}" href="{{ m.url }}"{% if m.selected %} aria-current="true"{% endif %}>
+            <a class="meal-card{% if m.snack %} meal-snack{% endif %}{% if m.selected %} is-active{% endif %}" href="{{ m.url }}"{% if m.selected %} aria-current="true"{% endif %}>
                 {% include 'nutrition/_meal_face.html' %}
             </a>
             {% endfor %}
@@ -33,7 +33,7 @@
         <!-- Телефон: картка прийому розгортається й показує склад -->
         <div class="meals-mobile">
             {% for m in view.meals %}
-            <details class="meal-fold"{% if m.selected %} open{% endif %}>
+            <details class="meal-fold{% if m.snack %} meal-snack{% endif %}"{% if m.selected %} open{% endif %}>
                 <summary class="meal-card">{% include 'nutrition/_meal_face.html' %}</summary>
                 <div class="meal-fold-body">
                     {% include 'nutrition/_composition.html' with items=m.items %}
