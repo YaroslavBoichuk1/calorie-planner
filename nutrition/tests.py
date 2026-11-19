@@ -2,6 +2,7 @@ import io
 import os
 import re
 import json
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,7 @@ from django.urls import reverse
 from . import checks, energy, login_limits, silpo, views
 from .models import MEAL_FLAGS, BoughtList, DailyNorm, MealPlan, PlanItem, Product, Profile, Recipe, RecipeIngredient, SilpoClient
 from . import planner
+from .management.commands.backup_db import backup_database
 from .management.commands.load_catalog import CATALOG_PATH, load_catalog
 from .planner import (
     DAY_PERCENTAGE, NO_RECIPES_MESSAGE, build_recipe_period, day_totals, meal_totals, period_totals,
@@ -2540,3 +2542,36 @@ class SnackTests(RecipeDataMixin, TestCase):
         loaded = load_plan_days(plan)
         self.assertEqual([meal['name'] for meal in loaded[0]['day']], list(planner.day_schedule(3000)))
         self.assertEqual(menu(loaded[0]), menu(days[0]))
+
+
+class BackupTests(SimpleTestCase):
+    def make_db(self, folder):
+        path = os.path.join(folder, 'db.sqlite3')
+        connection = sqlite3.connect(path)
+        with connection:
+            connection.execute('CREATE TABLE plan (name TEXT)')
+            connection.execute("INSERT INTO plan VALUES ('Мій раціон')")
+        connection.close()
+        return path
+
+    def test_copy_has_the_same_data(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = backup_database(self.make_db(folder), now=datetime(2026, 11, 18, 14, 5))
+            self.assertEqual(target.name, 'db-2026-11-18_14-05-00.sqlite3')
+            self.assertEqual(target.parent.name, 'backups')
+            connection = sqlite3.connect(target)
+            self.assertEqual(connection.execute('SELECT name FROM plan').fetchall(), [('Мій раціон',)])
+            connection.close()
+
+    def test_only_newest_copies_are_kept(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.make_db(folder)
+            for day in (15, 16, 17, 18):
+                target = backup_database(path, keep=2, now=datetime(2026, 11, day))
+            names = sorted(item.name for item in target.parent.iterdir())
+            self.assertEqual(names, ['db-2026-11-17_00-00-00.sqlite3', 'db-2026-11-18_00-00-00.sqlite3'])
+
+    def test_no_database_yet_means_no_copy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertIsNone(backup_database(os.path.join(folder, 'db.sqlite3')))
+            self.assertEqual(os.listdir(folder), [])
