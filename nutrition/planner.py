@@ -1,11 +1,8 @@
 import itertools
 import random
 
-MIN_PROTEIN = 5   # г білка на 100 г, щоб продукт вважався джерелом білка
-MIN_FAT = 2       # г жиру на 100 г, щоб продукт вважався джерелом жиру
 MIN_DAY_CALORIES = 1200  # ккал на день: менше без нагляду лікаря зазвичай не радять
 MAX_DAY_CALORIES = 10000   # ккал на день: вище — майже напевно помилка вводу
-NO_PRODUCTS_MESSAGE = "Бракує продуктів для раціону. Додай їх в адмінці."
 NO_RECIPES_MESSAGE = "Бракує страв для раціону. Додай їх в адмінці."
 VARIANT_JITTER = 0.04      # «Скласти заново»: найбільший випадковий зсув оцінки страви (4 в. п. промаху БЖВ)
 VARIETY_PENALTY = 0.025    # скільки промаху БЖВ «коштує» кожне вживання страви за період: більше — різноманітніше, менше — точніше
@@ -44,19 +41,6 @@ def split_calories(calories, schedule=DAY_PERCENTAGE):
     return day_calories
 
 
-def build_meal(products, target_calories):
-    """Найперша, наївна версія: ділить калорії між продуктами порівну (зараз не використовується)."""
-    portion = target_calories / len(products)
-    meals = []
-    for product in products:
-        grams = product.grams_for_calories(portion)
-        meals.append({
-            'product': product,
-            'grams': grams,
-        })
-    return meals
-
-
 def check_day_targets(day_calories, protein_pct, fat_pct, carbs_pct):
     """Перевіряє ціль дня: калорії в межах, частки БЖВ невід'ємні й разом дають 100 %. Кидає ValueError, якщо ні."""
     if not MIN_DAY_CALORIES <= day_calories <= MAX_DAY_CALORIES:
@@ -75,41 +59,6 @@ def day_name(index, days_count):
     if days_count >= len(WEEK_DAYS):
         return WEEK_DAYS[index % len(WEEK_DAYS)]
     return f'День {index + 1}'
-
-
-# Двигун з окремих продуктів: build_day, build_period, macro_targets, build_balanced_meal.
-# Сторінка тепер складає раціон зі страв (кінець файлу), а цей код лишається як перша версія.
-def build_day(protein_source, fat_source, carb_source, day_calories, protein_pct, fat_pct, carbs_pct):
-    """Будує раціон на день: для кожного прийому з split_calories викликає build_balanced_meal → список прийомів."""
-    check_day_targets(day_calories, protein_pct, fat_pct, carbs_pct)
-
-    meals_in_one_day = []
-    for name, meal_calories in split_calories(day_calories).items():
-        meal = build_balanced_meal(
-            protein_source, fat_source, carb_source, meal_calories,
-            protein_pct, fat_pct, carbs_pct,
-        )
-        meals_in_one_day.append({
-            'name': name,
-            'calories': meal_calories,
-            'meal': meal,
-        })
-    return meals_in_one_day
-
-
-def build_period(protein_sources, fat_sources, carb_sources, days_count, day_calories, protein_pct, fat_pct, carbs_pct):
-    """Будує раціон на days_count днів: щодня бере продукти зі списків по колу → список днів {name, day}."""
-    if not (protein_sources and fat_sources and carb_sources):
-        raise ValueError(NO_PRODUCTS_MESSAGE)
-
-    days = []
-    for i in range(days_count):
-        protein_source = protein_sources[i % len(protein_sources)]
-        fat_source = fat_sources[i % len(fat_sources)]
-        carb_source = carb_sources[i % len(carb_sources)]
-        day = build_day(protein_source, fat_source, carb_source, day_calories, protein_pct, fat_pct, carbs_pct)
-        days.append({'name': day_name(i, days_count), 'day': day})
-    return days
 
 
 def period_totals(days):
@@ -165,70 +114,6 @@ def meal_totals(meal):
         totals['carbs'] += product.carbs_for(grams)
         totals['cost'] = add_cost(totals['cost'], product.cost_for(grams))
     return totals
-
-
-def macro_targets(target_calories, protein_pct, fat_pct, carbs_pct):
-    """Ціль БЖВ у грамах: частка калорій ÷ 4 (білок, вуглеводи) або ÷ 9 (жир)."""
-    protein_grams = target_calories * protein_pct / 4
-    fat_grams     = target_calories * fat_pct / 9
-    carbs_grams   = target_calories * carbs_pct / 4
-    return {'protein': protein_grams, 'fat': fat_grams, 'carbs': carbs_grams}
-
-
-def build_balanced_meal(protein_source, fat_source, carb_source, target_calories, protein_pct, fat_pct, carbs_pct):
-    """Будує один прийом із 3 продуктів: білок і жир — під ціль, вуглеводи — на решту калорій. Кидає ValueError, якщо продукт не годиться."""
-    # ── Перевірка 0: чи всі продукти знайшлись у базі
-    if None in (protein_source, fat_source, carb_source):
-        raise ValueError(NO_PRODUCTS_MESSAGE)
-
-    # ── Перевірка 1: чи годиться продукт на роль «білок»
-    if protein_source.proteins <= MIN_PROTEIN:
-        raise ValueError(
-            f"«{protein_source.name}» містить замало білка "
-            f"({protein_source.proteins} г на 100 г), щоб бути джерелом білка."
-        )
-
-    # ── Перевірка 2: чи годиться продукт на роль «жир»
-    if fat_source.fats <= MIN_FAT:
-        raise ValueError(
-            f"«{fat_source.name}» містить замало жиру "
-            f"({fat_source.fats} г на 100 г), щоб бути джерелом жиру."
-        )
-
-    # ── Перевірка 2б: вуглеводи набираємо калоріями, тож без калорій було б ділення на 0
-    if carb_source.calories <= 0:
-        raise ValueError(
-            f"У продукту «{carb_source.name}» вказано {carb_source.calories} ккал на 100 г, "
-            f"тому порцію не порахувати. Виправ це в адмінці."
-        )
-
-    targets = macro_targets(target_calories, protein_pct, fat_pct, carbs_pct)
-
-    protein_grams = protein_source.grams_for_protein(targets['protein'])
-    protein_calories = protein_source.calories_for(protein_grams)
-
-    fat_grams = fat_source.grams_for_fat(targets['fat'])
-    fat_calories = fat_source.calories_for(fat_grams)
-
-    remaining_calories = target_calories - protein_calories - fat_calories
-
-    # ── Перевірка 3: чи залишилось місце для вуглеводів
-    if remaining_calories <= 0:
-        raise ValueError(
-            f"Білок і жир уже дають {protein_calories + fat_calories:.0f} ккал, "
-            f"а ціль — {target_calories} ккал. На вуглеводи нічого не лишається. "
-            f"Збільш калорії або обери продукти з меншою калорійністю."
-        )
-
-    carb_grams = carb_source.grams_for_calories(remaining_calories)
-
-
-    meal = [
-        {'role': 'Білок', 'product': protein_source, 'grams': protein_grams},
-        {'role': 'Жир', 'product': fat_source, 'grams': fat_grams},
-        {'role': 'Вуглеводи', 'product': carb_source, 'grams': carb_grams},
-    ]
-    return meal
 
 
 # ── Раціон зі страв

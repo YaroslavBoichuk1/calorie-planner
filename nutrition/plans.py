@@ -45,7 +45,7 @@ def save_plan(name, choices, plan_days, owner=None):
 
 
 def load_plan_days(plan):
-    """Відновлює з бази ту саму форму, що й build_period → список днів {name, day}."""
+    """Відновлює з бази ту саму форму, що й build_recipe_period → список днів {name, day}."""
     days = {}
     for item in plan.items.select_related('product'):
         day_info = days.setdefault(item.day_number, {'name': item.day_name, 'meals': {}})

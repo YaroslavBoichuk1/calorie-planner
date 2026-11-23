@@ -35,10 +35,6 @@ class Product(models.Model):
         """Скільки ккал у вказаних грамах продукту."""
         return self.calories / 100 * grams
 
-    def grams_for_calories(self, target_calories):
-        """Скільки грамів продукту потрібно, щоб отримати вказані ккал."""
-        return target_calories / (self.calories / 100)
-
     def cost_for(self, grams):
         """Скільки коштують вказані грами продукту (ціна штучного продукту — за одну штуку); None, якщо ціна невідома."""
         if self.price is None:
@@ -63,17 +59,9 @@ class Product(models.Model):
         """Скільки грамів білка у вказаних грамах продукту."""
         return float(self.proteins) / 100 * grams
 
-    def grams_for_protein(self, target_proteins):
-        """Скільки грамів продукту потрібно, щоб отримати вказаний білок."""
-        return target_proteins / (float(self.proteins) / 100)
-
     def fat_for(self, grams):
         """Скільки грамів жиру у вказаних грамах продукту."""
         return float(self.fats) / 100 * grams
-
-    def grams_for_fat(self, target_fats):
-        """Скільки грамів продукту потрібно, щоб отримати вказаний жир."""
-        return target_fats / (float(self.fats) / 100)
 
     def carbs_for(self, grams):
         """Скільки грамів вуглеводів у вказаних грамах продукту."""
